@@ -66,6 +66,17 @@ class OneHotEncoder:
 
 
 def one_hot_decode(X):
+    """
+    Parameters
+    ----------
+    X : numpy ndarray
+        [num_points, alphabet_size]
+
+    Returns
+    -------
+    out : list
+        list of int
+    """
     out = []
     for x_ in X:
         out.append(np.nonzero(x_)[0][0])

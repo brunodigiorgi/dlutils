@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 
 
 TF_activation = {
@@ -14,7 +15,8 @@ def lstm_stack(x, layers):
     ----------
     x : Tensor with shape [None (batch_size), num_steps, input_size]
     layers : list of dict
-        [{"num_units": int}, ...]
+        [{"num_units": int, "keep_prob": float}, ...]
+        "keep_prob" (for dropout) is optional
 
     Returns
     -------
@@ -26,6 +28,8 @@ def lstm_stack(x, layers):
     lstm_cells = []
     for layer in layers:
         lstm = tf.nn.rnn_cell.BasicLSTMCell(layer['num_units'], forget_bias=0.0)
+        if('keep_prob' in layer):
+            lstm = tf.nn.rnn_cell.DropoutWrapper(lstm, layer['keep_prob'])
         lstm_cells.append(lstm)
     stacked_cell = tf.nn.rnn_cell.MultiRNNCell(lstm_cells)
     _initial_state = stacked_cell.zero_state(tf.shape(x)[0], dtype=tf.float32)
@@ -72,10 +76,9 @@ class RNNTensorFlow():
         Parameters
         ----------
         rnn_layers : list of dict
-            [{"num_units": int}, ...]
+            see lstm_stack()
         dense_layers : list of dict
-            [{"num_units": int, "activation": "relu"|"sigmoid"|"tanh"}, ...]
-            "activation" key is optional
+            see dense_stack()
         output_type : string
             'cls'|'reg'
         """
@@ -141,6 +144,34 @@ class RNNTensorFlow():
     def predict(self, inputs):
         prediction = self.session.run(self.prediction, {self.inputs: inputs})
         return prediction
+
+    def generate(self, priming_sequence, length):
+        """
+        if 'cls', outputs are one_hot encoded before feedback
+        Parameters
+        ----------
+        priming_sequence : numpy ndarray (1 (batch_size), num_steps, input_size)
+            if it is two dimensional, a dimension will be added at the front            
+        """
+        assert(priming_sequence.ndim >= 2)
+        if(priming_sequence.ndim == 2):
+            priming_sequence = np.expand_dims(priming_sequence, 0)
+        assert(self.conf['num_steps'] == priming_sequence.shape[1])
+
+        inputs = priming_sequence
+        outputs = np.zeros([length, self.conf['output_size']])
+
+        for i in range(length):
+            out = self.predict(inputs)
+            if(self.conf['output_type'] == 'cls'):  # one_hot encode before feedback
+                k = np.argmax(out)
+                out = np.zeros(self.conf['input_size'])
+                out[k] = 1
+            outputs[i, :] = out
+            inputs[:-1, :] = inputs[1:, :]
+            inputs[-1, :] = out
+
+        return outputs
 
     def save(self, fn):
         self.saver.save(self.session, fn)
