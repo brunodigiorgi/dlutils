@@ -71,6 +71,7 @@ class HtmlLogger (Logger):
         self.test_epochs = []
         self.i_fold = 0
         self.current_epoch = 0
+        self._write()
 
     def new_fold(self):
         self.train_ev.append([])
@@ -83,18 +84,19 @@ class HtmlLogger (Logger):
         self.train_ev[self.i_fold].append(train_ev)
         self.train_epochs[self.i_fold].append(epoch)
         self.current_epoch = epoch
-        self._write_json()
-        self._write_html()
+        self._write()
 
     def append_test_ev(self, test_ev, epoch):
         self.test_ev[self.i_fold].append(test_ev)
         self.test_epochs[self.i_fold].append(epoch)
         self.current_epoch = epoch
-        self._write_json()
-        self._write_html()
+        self._write()
 
     def set_current_epoch(self, epoch):
         self.current_epoch = epoch
+        self._write()
+
+    def _write(self):
         self._write_json()
         self._write_html()
 
