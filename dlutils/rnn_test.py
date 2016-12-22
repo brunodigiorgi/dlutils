@@ -68,7 +68,7 @@ class RNNTest:
                 train_ev = train_ev_ / count
                 if(di_train.epochs >= log_epoch + self.log_epochs):
                     log_epoch = math.floor(di_train.epochs)
-                    self.logger.append_train_ev(train_ev, di_train.epochs - 1)
+                    self.logger.append_train_ev(train_ev, log_epoch - 1)
 
                     # test
                     test_ev_, count = 0, 0
@@ -78,7 +78,7 @@ class RNNTest:
                         count += 1
 
                     test_ev = test_ev_ / count
-                    self.logger.append_test_ev(test_ev, di_train.epochs - 1)
+                    self.logger.append_test_ev(test_ev, log_epoch - 1)
 
                 model_fn = self.model_id + '_' + str(i_fold) + "_" + str(iepoch) + ".ckpt"
                 model_fn = os.path.join(self.model_path, model_fn)
