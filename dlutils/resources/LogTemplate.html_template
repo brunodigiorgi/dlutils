@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>PYTHON_PLACEHOLDER_HTML_TITLE</title>
+
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-2.2.1.min.js"></script>
+
+    <!-- BoostrapCss -->
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- BootstrapJS -->
+    <script type='text/javascript' src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js"></script>
+
+    <!-- Plotly.js -->
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
+    </head>
+
+  <body>
+	
+  	<div class="container-fluid">
+  		<!-- create a row for configuration -->
+  		<div>Configuration:</div><div id="conf_div" style="font-family: monospace; white-space: pre;"></div>
+  		<div id="current_ifold_div">Current fold: <span id="current_ifold_span"></span></div>
+  		<div id="current_epoch_div">Current epoch: <span id="current_epoch_span"></span></div>
+
+  		<div id="plotly_div" style="width: 960px; height: 600px;"></div>
+  	<div>
+
+  </body>
+
+<script>
+	
+	document.getElementById("conf_div").innerHTML = PYTHON_PLACEHOLDER_CONF;
+	document.getElementById("current_ifold_span").innerHTML = PYTHON_PLACEHOLDER_CURRENT_IFOLD;
+	document.getElementById("current_epoch_span").innerHTML = PYTHON_PLACEHOLDER_CURRENT_EPOCH;
+
+	PYTHON_PLACEHOLDER_TRACES
+
+	var layout = {
+	  yaxis: {title: PYTHON_PLACEHOLDER_YLABEL},       // set the y axis title
+	  xaxis: {title: PYTHON_PLACEHOLDER_XLABEL},       // set the y axis title
+	  margin: {                           // update the left, bottom, right, top margin
+	    l: 100, b: 40, r: 10, t: 20
+	  }
+	};
+
+	Plotly.plot(document.getElementById('plotly_div'), data, layout);
+
+
+</script>
+
+</html>
