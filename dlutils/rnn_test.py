@@ -76,7 +76,7 @@ class RNNTest:
                     train_ev__ = self.model.train(inputs_, targets_)
                     train_ev_ += train_ev__
                     count += 1
-                    # print("epoch:", iepoch, count, "train_loss:", train_ev__, di_train.epochs)
+                    # print("epoch:", iepoch, count, "train_loss:", train_ev__, di_train.epochs)
 
                     if(time.time() > log_time + self.update_interval):
                         log_time = time.time()

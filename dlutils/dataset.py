@@ -359,7 +359,7 @@ class DatasetIterator:
         self.epochs = - 1 / len(self.seq_list)
         self.iseq = 0
         self.buffer = collections.deque()
-        self.ibatch = 0
+        self.ibuf = 0
         self.fire_new_seq = True
         self._fill_buffer()
 
@@ -389,26 +389,20 @@ class DatasetIterator:
             self.fire_new_seq = False
 
         assert(len(self.buffer) > 0)
-        assert(len(self.buffer[0]) > self.ibatch)
-        out = self.buffer[0][self.ibatch]
-        self.ibatch += 1
+        assert(len(self.buffer[0]) > self.ibuf)
+        assert(len(self.buffer[0][self.ibuf]) == 2)
 
-        if(self.ibatch == len(self.buffer[0])):
+        # print(self.ibuf, '/', len(self.buffer[0]))
+        out = self.buffer[0][self.ibuf]
+        assert(len(out) == 2)  # x, y
+        self.ibuf += 1
+
+        if(len(self.buffer[0]) == self.ibuf):
             self.buffer.popleft()
-            self.ibatch = 0
+            self.ibuf = 0
             self.fire_new_seq = True
 
         if(len(self.buffer) == 0):
             self._fill_buffer()
 
         return out
-
-        # if(self.batch_size is None):
-        #     out = [b[:] for b in self.buffer]
-        #     self.buffer = None
-        # else:
-        #     out = [b[:self.batch_size] for b in self.buffer]
-        #     self.buffer = [b[self.batch_size:] for b in self.buffer]
-        #     self._update_len()
-        # self._fill_buffer()
-        # return out
