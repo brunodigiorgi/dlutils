@@ -172,7 +172,6 @@ class RNNLM_Tensorflow():
         assert((self.conf['keep_prob'] >= 0.) and (self.conf['keep_prob'] <= 1.))
 
     def set_epoch(self, e):
-        print('set_epoch')
         self.session.run(tf.assign(self.lr, self.conf["learning_rate"] * (self.conf["decay_rate"] ** e)))
 
     def new_sequence(self):

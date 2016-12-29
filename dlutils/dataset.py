@@ -388,6 +388,8 @@ class DatasetIterator:
             [fn() for fn in self.new_sequence_callbacks]
             self.fire_new_seq = False
 
+        assert(len(self.buffer) > 0)
+        assert(len(self.buffer[0]) > self.ibatch)
         out = self.buffer[0][self.ibatch]
         self.ibatch += 1
 
