@@ -8,6 +8,11 @@ TF_activation = {
     "tanh": tf.tanh
 }
 
+TF_Optimizer = {
+    "Adam": tf.train.AdamOptimizer,
+    "Adagrad": tf.train.AdagradOptimizer,
+}
+
 
 def rnn_stack(x, layers, keep_prob, scope=None, reuse=False):
     """
@@ -89,7 +94,7 @@ def sample(probs, temperature=1.0):
 
 class RNNLM_Tensorflow():
     def __init__(self, num_steps, rnn_layers, dense_layers, vocab_size,
-                 init_scale=.1, learning_rate=.1, keep_prob=1., decay_rate=.97, grad_clip=5.):
+                 init_scale=.1, optimizer="Adagrad", learning_rate=.1, keep_prob=1., decay_rate=.97, grad_clip=5.):
 
         self.conf = {
             "num_steps": num_steps,
@@ -101,6 +106,7 @@ class RNNLM_Tensorflow():
             "decay_rate": decay_rate,
             "grad_clip": grad_clip,
             "keep_prob": keep_prob,
+            "optimizer": optimizer,
         }
 
         self._check_conf()
@@ -148,7 +154,7 @@ class RNNLM_Tensorflow():
         self.lr = tf.Variable(self.conf["learning_rate"], trainable=False)
         tvars = tf.trainable_variables()
         grads, _ = tf.clip_by_global_norm(tf.gradients(self.cost, tvars), self.conf['grad_clip'])
-        optimizer = tf.train.AdamOptimizer(self.lr)
+        optimizer = TF_Optimizer[self.conf['optimizer']](self.lr)
         self._train = optimizer.apply_gradients(zip(grads, tvars))
         self.need_reset_rnn_state = True  # initialize rnn state
 
