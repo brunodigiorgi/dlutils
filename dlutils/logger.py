@@ -14,14 +14,21 @@ class Logger:
     def __init__(self):
         pass
 
-    def new_model(self, conf):
-        pass
+    def new_model(self, conf, model_id=None):
+        print('*** new model ***')
+        print(pprint.pformat(conf, width=1, indent=0))
+
+    def new_fold(self):
+        print('new fold')
 
     def append_train_ev(self, train_ev, epoch):
-        pass
+        print('epoch:', epoch, 'train ev:', train_ev)
 
     def append_test_ev(test_ev, epoch):
-        pass
+        print('epoch:', epoch, 'test ev:', test_ev)
+
+    def set_current_epoch(self, epoch):
+        print('current epoch:', epoch)
 
 
 class LoggerComposite (Logger):
@@ -83,13 +90,11 @@ class HtmlLogger (Logger):
     def append_train_ev(self, train_ev, epoch):
         self.train_ev[self.i_fold].append(train_ev)
         self.train_epochs[self.i_fold].append(epoch)
-        self.current_epoch = epoch
         self._write()
 
     def append_test_ev(self, test_ev, epoch):
         self.test_ev[self.i_fold].append(test_ev)
         self.test_epochs[self.i_fold].append(epoch)
-        self.current_epoch = epoch
         self._write()
 
     def set_current_epoch(self, epoch):

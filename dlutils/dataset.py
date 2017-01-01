@@ -33,25 +33,30 @@ def frame_ndarray(a, frame_size, hop_size):
 
 
 def format_sequence(seq, batch_size, num_steps, overlap=.5):
-    # print('format_sequence', batch_size, num_steps)
+    """
+    Split a sequence into a list of batches.
+    Each batch is a list of two ndarray [x, y]
+    Each ndarray has dim=[batch_size, num_steps, input_size]
+    """
+
     data_len = len(seq)
     batch_len = data_len // batch_size
     hop_size = batch_len
+    last_batch = batch_size - 1
 
     if(overlap is not None):
-        last_batch = batch_size - 1
         batch_len = - data_len / (overlap * last_batch - last_batch - 1)
         hop_size = batch_len * (1 - overlap)
         hop_size = math.floor(hop_size)
         batch_len = data_len - hop_size * last_batch
 
     # make sure that hop_size is not a multiple of num_steps (for variety in batches)
-    # Effectiveness not yet proved
+    # Effectiveness of this step is not yet proved
     if(hop_size % num_steps == 0):
-        hop_size -= 1
-        batch_len = data_len - hop_size * last_batch
+         hop_size -= 1
+         batch_len = data_len - hop_size * last_batch
 
-    seq_reshaped = frame_ndarray(seq[0:(hop_size * batch_size + batch_len)], batch_len, hop_size)
+    seq_reshaped = frame_ndarray(seq[0:(hop_size * last_batch + batch_len)], batch_len, hop_size)
     nbatches = (batch_len - 1) // num_steps
     out = []
     for i in range(nbatches):
@@ -124,7 +129,7 @@ class Dataset:
 
 
 class DatasetLanguageModel(Dataset):
-    def __init__(self, data, batch_size, num_steps, dataset_transformation=None, transformation_mode='pre', dataset_augmentations=[]):
+    def __init__(self, data, batch_size, num_steps, name='', dataset_transformation=None, transformation_mode='pre', dataset_augmentations=[]):
         """
         Parameters
         ----------
@@ -143,6 +148,7 @@ class DatasetLanguageModel(Dataset):
 
         self.batch_size = batch_size
         self.num_steps = num_steps
+        self.name = name
         self.dataset_transformation = dataset_transformation
         self.transformation_mode = transformation_mode
         self.dataset_augmentations = dataset_augmentations
@@ -161,12 +167,13 @@ class DatasetLanguageModel(Dataset):
         self.slen = [len(s) for s in self.data]
 
         self.conf = {
+            "name": self.name,
+            "batch_size": self.batch_size,
+            "num_steps": self.num_steps,
             "nseq": self.nseq,
             "tot_len": sum(self.slen),
             "max_len": max(self.slen),
             "min_len": min(self.slen),
-            "batch_size": self.batch_size,
-            "num_steps": self.num_steps
         }
 
     def format(self, iseq):
@@ -207,6 +214,10 @@ class DatasetTranslator:
         else:
             self.count = dict(count)
 
+        x = np.array(list(self.count.values()), dtype=np.float32)
+        x = x / np.sum(x)
+        self.entropy = - np.sum(x * np.log(x))
+
         self.alphabet = sorted(list(self.count.keys()))
         self._to_int = {symbol: i for i, symbol in enumerate(self.alphabet)}
         self._to_symbol = {i: symbol for i, symbol in enumerate(self.alphabet)}
@@ -214,6 +225,12 @@ class DatasetTranslator:
         self.unknown_int = None
         if(vocabulary_size is not None):
             self.unknown_int = self._to_int['UNK']
+
+        self.conf = {
+            "entropy": self.entropy,
+            "nsymbols": len(self.alphabet),
+            "alphabet": self.alphabet
+        }
 
     def to_int(self, data):
         """

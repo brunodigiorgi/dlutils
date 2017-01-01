@@ -94,7 +94,7 @@ def sample(probs, temperature=1.0):
 
 class RNNLM_Tensorflow():
     def __init__(self, num_steps, rnn_layers, dense_layers, vocab_size,
-                 init_scale=.1, optimizer="Adagrad", learning_rate=.1, keep_prob=1., decay_rate=.97, grad_clip=5.):
+                 init_scale=.1, optimizer="Adagrad", learning_rate=.1, keep_prob=1., decay_rate=1.0, grad_clip=5.):
 
         self.conf = {
             "num_steps": num_steps,
@@ -129,7 +129,7 @@ class RNNLM_Tensorflow():
         outputs = tf.one_hot(inputs_squeezed, self.conf['vocab_size'], dtype=tf.float32)
 
         # rnn
-        self.keep_prob = tf.Variable(self.conf["keep_prob"], trainable=False)
+        self.keep_prob = tf.Variable(self.conf["keep_prob"], trainable=False, dtype=tf.float32)
         self.stacked_cell, outputs, self.initial_state, self.final_state = rnn_stack(outputs, self.conf['rnn_layers'], self.keep_prob, scope='rnnlm')
         outputs = tf.reshape(outputs, [-1, self.conf['rnn_layers'][-1]['num_units']])
 

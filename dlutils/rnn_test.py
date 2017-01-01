@@ -2,19 +2,21 @@ from sklearn import cross_validation
 import time
 from random import shuffle
 from .dataset import DatasetIterator
+from .logger import Logger
 from time import localtime, strftime
 import os
 import math
 
 
 class RNNTest:
-    def __init__(self, dataset, model, batch_size, logger,
+    def __init__(self, dataset, model, logger=None,
                  nfolds=5, max_fold=None, proportion=1, update_interval=120,
                  log_epochs=1, max_epochs=1000, save_every=100, model_path='models/'):
         self.dataset = dataset
         self.model = model
-        self.batch_size = batch_size
         self.logger = logger
+        if(self.logger is None):
+            self.logger = Logger()
         self.nfolds = nfolds
         assert(self.nfolds > 0)
         self.max_fold = max_fold
@@ -30,7 +32,6 @@ class RNNTest:
             os.mkdir(self.model_path)
 
         self.conf = {
-            "batch_size": self.batch_size,
             "save_every": save_every,
             "max_epochs": self.max_epochs,
             "proportion": self.proportion,
