@@ -32,14 +32,14 @@ def frame_ndarray(a, frame_size, hop_size):
     return b
 
 
-def format_sequence(seq, batch_size, num_steps, overlap=.5):
+def format_sequence(in_seq, target_seq, batch_size, num_steps, overlap=.5):
     """
     Split a sequence into a list of batches.
     Each batch is a list of two ndarray [x, y]
     Each ndarray has dim=[batch_size, num_steps, input_size]
     """
-
-    data_len = len(seq)
+    assert(len(in_seq) == len(target_seq))
+    data_len = len(in_seq)
     batch_len = data_len // batch_size
     hop_size = batch_len
     last_batch = batch_size - 1
@@ -53,15 +53,16 @@ def format_sequence(seq, batch_size, num_steps, overlap=.5):
     # make sure that hop_size is not a multiple of num_steps (for variety in batches)
     # Effectiveness of this step is not yet proved
     if(hop_size % num_steps == 0):
-         hop_size -= 1
-         batch_len = data_len - hop_size * last_batch
+        hop_size -= 1
+        batch_len = data_len - hop_size * last_batch
 
-    seq_reshaped = frame_ndarray(seq[0:(hop_size * last_batch + batch_len)], batch_len, hop_size)
-    nbatches = (batch_len - 1) // num_steps
+    in_seq_reshaped = frame_ndarray(in_seq[0:(hop_size * last_batch + batch_len)], batch_len, hop_size)
+    target_seq_reshaped = frame_ndarray(target_seq[0:(hop_size * last_batch + batch_len)], batch_len, hop_size)
+    nbatches = batch_len // num_steps
     out = []
     for i in range(nbatches):
-        x_ = seq_reshaped[:, i * num_steps:(i + 1) * num_steps, ...]
-        y_ = seq_reshaped[:, i * num_steps + 1:(i + 1) * num_steps + 1, ...]
+        x_ = in_seq_reshaped[:, i * num_steps:(i + 1) * num_steps, ...]
+        y_ = target_seq_reshaped[:, i * num_steps:(i + 1) * num_steps, ...]
         out.append([x_, y_])
     return out
 
@@ -128,12 +129,12 @@ class Dataset:
         pass
 
 
-class DatasetLanguageModel(Dataset):
-    def __init__(self, data, batch_size, num_steps, name='', dataset_transformation=None, transformation_mode='pre', dataset_augmentations=[]):
+class Dataset_seq2seq(Dataset):
+    def __init__(self, in_data, batch_size, num_steps, target_data=None, name='', seq_processor=None):
         """
         Parameters
         ----------
-        data : string or list of numpy ndarray
+        data : list of numpy ndarray
             if string is a npz file containing a list of ndarray [seq_length x frame_size]
         dataset_transformation : callable
             applied to every original or augmented sequence
@@ -142,35 +143,39 @@ class DatasetLanguageModel(Dataset):
         dataset_augmentations : list of callable
             create a new sequence from a given one
         """
-        self.data = data
-        if(isinstance(data, str)):
-            self.data = pickle.load(open(self.data, 'rb'))
-
+        self.data = in_data
         self.batch_size = batch_size
         self.num_steps = num_steps
+        self.target_data = target_data
         self.name = name
-        self.dataset_transformation = dataset_transformation
-        self.transformation_mode = transformation_mode
-        self.dataset_augmentations = dataset_augmentations
+        self.seq_processor = seq_processor
 
         self.nseq = len(self.data)
-
-        if(len(self.data[0].shape) == 1):
+        if(self.data[0].ndim == 1):
             self.input_size = 1
             for i, d in enumerate(self.data):
                 self.data[i] = self.data[i].reshape(-1, 1)
         else:
             self.input_size = self.data[0].shape[1]
 
-        self.target_size = self.input_size  # for language model the target shares the input domain
         self.nseq = len(self.data)
         self.slen = [len(s) for s in self.data]
+
+        # parse target_data if present
+        if(self.target_data is not None):
+            assert(len(self.target_data) == len(self.data))
+            for i in range(self.nseq):
+                # assume same length
+                assert(self.target_data[i].size == self.data[i].size)
+                if(self.target_data[i].ndim == 1):
+                    self.target_data[i] = self.target_data[i].reshape(-1, 1)
 
         self.conf = {
             "name": self.name,
             "batch_size": self.batch_size,
             "num_steps": self.num_steps,
             "nseq": self.nseq,
+            "slen": self.slen,
             "tot_len": sum(self.slen),
             "max_len": max(self.slen),
             "min_len": min(self.slen),
@@ -179,22 +184,19 @@ class DatasetLanguageModel(Dataset):
     def format(self, iseq):
         seq = self.data[iseq]
 
-        if(self.dataset_transformation is not None and self.transformation_mode == 'pre'):
-            seq = self.dataset_transformation(seq)
+        # data is a tuple input_seq, target_seq
+        data = (seq[:-1], seq[1:])
+        if(self.target_data is not None):
+            data = (seq, self.target_data[iseq])
 
-        seqs = [seq]
-        for a in self.dataset_augmentations:
-            augmented_seqs = a(seq)
-            seqs.extend(augmented_seqs)
-
-        if(self.dataset_transformation is not None and self.transformation_mode == 'post'):
-            nseqs = len(seqs)
-            for i in range(nseqs):
-                seqs[i] = self.dataset_transformation(seqs[i])
+        # seqs is the list containing data + all augmented sequences
+        seqs = [data]
+        if(self.seq_processor is not None):
+            seqs.extend(self.seq_processor(data))
 
         out = []
         for s in seqs:
-            out.append(format_sequence(s, self.batch_size, self.num_steps))
+            out.append(format_sequence(s[0], s[1], self.batch_size, self.num_steps))
 
         return out
 
@@ -239,7 +241,7 @@ class DatasetTranslator:
         data: list [of lists]+ of symbols, or just a symbol
         """
         try:  # assume iterable
-            assert(not isinstance(data, str))
+            assert(not isinstance(data, str))  # do not iterate if string
             out = []
             for d in data:
                 out.append(self.to_int(d))
@@ -348,9 +350,6 @@ class DatasetEmbedding:
         return inputs, targets
 
 
-
-
-
 class DatasetIterator:
     """
     Stores a reference to the dataset and produces batches of data.
@@ -373,7 +372,7 @@ class DatasetIterator:
         self.reset()
 
     def reset(self):
-        self.epochs = - 1 / len(self.seq_list)
+        self.epochs = 0
         self.iseq = 0
         self.buffer = collections.deque()
         self.ibuf = 0
@@ -384,8 +383,9 @@ class DatasetIterator:
         iseq = self.seq_list[self.iseq]
         new_buffer = self.dataset.format(iseq)  # a list of [[x_0, y_0], [x_1, y_1]] for each sequence
         self.buffer.extend(new_buffer)
+        self.buffer_len = len(self.buffer)
 
-        self.epochs += 1 / len(self.seq_list)
+        # self.epochs += 1 / len(self.seq_list)
         self.iseq = (self.iseq + 1) % len(self.seq_list)
 
     def _fill_buffer(self):
@@ -413,6 +413,7 @@ class DatasetIterator:
         out = self.buffer[0][self.ibuf]
         assert(len(out) == 2)  # x, y
         self.ibuf += 1
+        self.epochs += 1 / (len(self.seq_list) * self.buffer_len * len(self.buffer[0]))
 
         if(len(self.buffer[0]) == self.ibuf):
             self.buffer.popleft()

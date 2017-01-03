@@ -10,8 +10,8 @@ import math
 
 class RNNTest:
     def __init__(self, dataset, model, logger=None,
-                 nfolds=5, max_fold=None, proportion=1, update_interval=120,
-                 log_epochs=1, max_epochs=1000, save_every=100, model_path='models/'):
+                 nfolds=5, max_fold=None, proportion=1,
+                 max_epochs=1000, save_every=100, model_path='models/'):
         self.dataset = dataset
         self.model = model
         self.logger = logger
@@ -24,8 +24,6 @@ class RNNTest:
             self.max_fold = self.nfolds
         assert((self.max_fold > 0) and (self.max_fold <= self.nfolds))
         self.proportion = proportion
-        self.update_interval = update_interval
-        self.log_epochs = log_epochs
         self.max_epochs = max_epochs
         self.model_path = model_path
         if(not os.path.exists(self.model_path)):
@@ -51,14 +49,15 @@ class RNNTest:
         else:
             self.k_fold = [(self.list_seq, self.list_seq)]
 
-    def test(self):
+    def test(self, contd=False):
         self.logger.new_model(self.conf, self.model_id)
-        log_time = time.time()
+
         for i_fold, (train_set, test_set) in enumerate(self.k_fold):
             if(i_fold >= self.max_fold):
                 continue
             self.logger.new_fold()
-            self.model.initialize()
+            if(not contd):
+                self.model.initialize()
 
             list_train_seq = [self.list_seq[i] for i in train_set]
             list_test_seq = [self.list_seq[i] for i in test_set]
@@ -69,34 +68,30 @@ class RNNTest:
             log_epoch = 0
             save_epoch = 0
             for iepoch in range(self.conf['max_epochs']):
-                self.model.set_epoch(iepoch)
+                self.logger.new_epoch(iepoch)
 
+                # train for an epoch
                 train_ev_, count = 0, 0
-                while(di_train.epochs < iepoch + 1):
+                while(di_train.epochs <= iepoch + 1):
                     inputs_, targets_ = di_train.produce()
                     train_ev__ = self.model.train(inputs_, targets_)
                     train_ev_ += train_ev__
                     count += 1
-                    # print("epoch:", iepoch, count, "train_loss:", train_ev__, di_train.epochs)
-
-                    if(time.time() > log_time + self.update_interval):
-                        log_time = time.time()
-                        self.logger.set_current_epoch(di_train.epochs)
+                    self.logger.append_step(count, train_ev__, di_train.epochs)
 
                 train_ev = train_ev_ / count
-                if(di_train.epochs >= log_epoch + self.log_epochs):
-                    log_epoch = math.floor(di_train.epochs)
-                    self.logger.append_train_ev(train_ev, log_epoch - 1)
+                log_epoch = math.floor(di_train.epochs)
+                self.logger.append_train_ev(train_ev, log_epoch - 1)
 
-                    # test
-                    if(self.nfolds > 1):
-                        test_ev_, count = 0, 0
-                        while(di_test.epochs < iepoch + 1):
-                            inputs_, targets_ = di_test.produce()
-                            test_ev_ += self.model.test(inputs_, targets_)
-                            count += 1
-                        test_ev = test_ev_ / count
-                        self.logger.append_test_ev(test_ev, log_epoch - 1)
+                # test
+                if(self.nfolds > 1):
+                    test_ev_, count = 0, 0
+                    while(di_test.epochs <= iepoch + 1):
+                        inputs_, targets_ = di_test.produce()
+                        test_ev_ += self.model.test(inputs_, targets_)
+                        count += 1
+                    test_ev = test_ev_ / count
+                    self.logger.append_test_ev(test_ev, log_epoch - 1)
 
                 if(iepoch >= save_epoch + self.conf["save_every"]):
                     model_fn = self.model_id + '_' + str(i_fold) + "_" + str(iepoch) + ".ckpt"

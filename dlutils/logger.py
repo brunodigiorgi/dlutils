@@ -4,6 +4,7 @@ from time import localtime, strftime
 import json
 import pprint
 import os
+import numpy as np
 
 
 class Logger:
@@ -11,7 +12,9 @@ class Logger:
     Interface for the Logger class
     """
 
-    def __init__(self):
+    def __init__(self, print_every=20):
+        self.print_every = print_every
+        self.cum_loss = 0
         pass
 
     def new_model(self, conf, model_id=None):
@@ -19,7 +22,17 @@ class Logger:
         print(pprint.pformat(conf, width=1, indent=0))
 
     def new_fold(self):
-        print('new fold')
+        print('*****\nnew fold\n*****')
+
+    def new_epoch(self, iepoch):
+        print('*** epoch:', iepoch)
+        self.cum_loss = 0
+
+    def append_step(self, step, loss, epochs):
+        self.cum_loss += loss
+        if((step % self.print_every) == 0):
+            print('step:', step, '(%.3f) average loss:' % (epochs), self.cum_loss / self.print_every)
+            self.cum_loss = 0
 
     def append_train_ev(self, train_ev, epoch):
         print('epoch:', epoch, 'train ev:', train_ev)
@@ -31,7 +44,7 @@ class Logger:
         print('current epoch:', epoch)
 
 
-class LoggerComposite (Logger):
+class LoggerComposite(Logger):
     def __init__(self, loggers):
         self.loggers = loggers
 
@@ -42,6 +55,14 @@ class LoggerComposite (Logger):
     def new_fold(self):
         for l in self.loggers:
             l.new_fold()
+
+    def new_epoch(self, iepoch):
+        for l in self.loggers:
+            l.new_epoch(iepoch)
+
+    def append_step(self, step, loss, epochs):
+        for l in self.loggers:
+            l.new_epoch(self, step, loss, epochs)
 
     def set_current_epoch(self, epoch):
         for l in self.loggers:
@@ -56,13 +77,16 @@ class LoggerComposite (Logger):
             l.append_test_ev(test_ev, epoch)
 
 
-class HtmlLogger (Logger):
-    def __init__(self, log_path, ylabel):
+class HtmlLogger(Logger):
+    def __init__(self, log_path, ylabel, log_delta_sec=60):
         if(not os.path.exists(log_path)):
             os.mkdir(log_path)
         self.log_path = log_path
         self.template = resource_string('dlutils.resources', 'LogTemplate.html_template').decode('utf-8')
         self.ylabel = ylabel
+        self.log_delta_sec = log_delta_sec
+        self.log_time = time.time()
+        self.cum_loss = 0
 
     def new_model(self, conf, model_id=None):
         self.conf = conf
@@ -74,31 +98,46 @@ class HtmlLogger (Logger):
 
         self.train_ev = []
         self.train_epochs = []
+        self.train_time = []
         self.test_ev = []
         self.test_epochs = []
         self.i_fold = 0
         self.current_epoch = 0
+        self.current_state_str = ''
+        self.epoch_eta = 0
         self._write()
 
     def new_fold(self):
         self.train_ev.append([])
         self.train_epochs.append([])
+        self.train_time.append([])
         self.test_ev.append([])
         self.test_epochs.append([])
         self.i_fold = len(self.train_ev) - 1
 
+    def new_epoch(self, iepoch):
+        self.current_epoch = iepoch
+        self.cum_loss = 0
+
+    def append_step(self, step, loss, epochs):
+        self.cum_loss += loss
+        if(time.time() - self.log_time > self.log_delta_sec):
+            self.log_time = time.time()
+            self.current_state_str = 'epoch: (%.3f) average loss: %.4f' % (epochs, self.cum_loss / step)
+
     def append_train_ev(self, train_ev, epoch):
         self.train_ev[self.i_fold].append(train_ev)
         self.train_epochs[self.i_fold].append(epoch)
+        self.train_time[self.i_fold].append(time.time())
+        if(len(self.train_time[0]) >= 2):
+            self.epoch_eta = np.mean(np.diff(np.concatenate(self.train_time)))
+        self.current_epoch = epoch + 1
         self._write()
 
     def append_test_ev(self, test_ev, epoch):
         self.test_ev[self.i_fold].append(test_ev)
         self.test_epochs[self.i_fold].append(epoch)
-        self._write()
-
-    def set_current_epoch(self, epoch):
-        self.current_epoch = epoch
+        self.current_epoch = epoch + 1
         self._write()
 
     def _write(self):
@@ -111,11 +150,13 @@ class HtmlLogger (Logger):
             "conf": self.conf,
             "train_ev": self.train_ev,
             "train_epochs": self.train_epochs,
+            "train_time": self.train_time,
             "test_ev": self.test_ev,
             "test_epochs": self.test_epochs,
             "current_state": {
                 "ifold": self.i_fold,
                 "epoch": self.current_epoch,
+                "epoch_eta": self.epoch_eta,
             }
         }
         json.dump(data, open(self.json_filename, 'w'))
@@ -125,7 +166,8 @@ class HtmlLogger (Logger):
         conf_string = pprint.pformat(self.conf, width=1, indent=0).replace("\n", "<br/>")
         conf = json.dumps(conf_string)
         current_ifold = json.dumps(self.i_fold)
-        current_epoch = json.dumps(self.current_epoch)
+        epoch_eta = json.dumps(self.epoch_eta)
+        current_state = json.dumps(self.current_state_str)
 
         plotter = PlotlyPlotter()
         for i, (tr_ep, tr_ev, te_ep, te_ev) in enumerate(zip(self.train_epochs, self.train_ev, self.test_epochs, self.test_ev)):
@@ -140,7 +182,8 @@ class HtmlLogger (Logger):
         html_string = html_string.replace("PYTHON_PLACEHOLDER_HTML_TITLE", html_title)
         html_string = html_string.replace("PYTHON_PLACEHOLDER_CONF", conf)
         html_string = html_string.replace("PYTHON_PLACEHOLDER_CURRENT_IFOLD", current_ifold)
-        html_string = html_string.replace("PYTHON_PLACEHOLDER_CURRENT_EPOCH", current_epoch)
+        html_string = html_string.replace("PYTHON_PLACEHOLDER_CURRENT_STATE", current_state)
+        html_string = html_string.replace("PYTHON_PLACEHOLDER_EPOCH_ETA", epoch_eta)
         html_string = html_string.replace("PYTHON_PLACEHOLDER_TRACES", plot_code)
         html_string = html_string.replace("PYTHON_PLACEHOLDER_YLABEL", ylabel)
         html_string = html_string.replace("PYTHON_PLACEHOLDER_XLABEL", xlabel)

@@ -21,7 +21,7 @@ def rnn_stack(x, layers, keep_prob, scope=None, reuse=False):
     x : Tensor with shape [None (batch_size), num_steps, input_size]
     layers : list of dict
         [{"num_units": int}, ...]
-    keep_prob : unit Tensor        
+    keep_prob : unit Tensor
 
     Returns
     -------
@@ -84,26 +84,109 @@ def embedding(inputs, vocab_size, output_size, init_stddev=0.1):
     return inputs
 
 
-def sample(probs, temperature=1.0):
+def sample(probs, temperature=1.0, avoid=[]):
     # helper function to sample an index from a probability array
     # may produce underflow errors, call np.seterr(under='ignore') somewhere before this
+
+    # for stability, avoid log(0)
+    if(np.any(probs == 0)):
+        k = np.min(probs[probs != 0]) * 0.01
+        probs[probs == 0] = k
+
     probs = np.log(probs) / temperature
     probs = np.exp(probs) / np.sum(np.exp(probs))
-    return np.random.choice(len(probs), p=probs)  # more stable than np.argmax(np.random.multinomial(1, a, 1))
+
+    # delete all avoid probs
+    for i in avoid:
+        probs[i] = 0
+    probs = probs / np.sum(probs)  # re-normalize
+
+    out = np.random.choice(len(probs), p=probs)
+    return out
 
 
-class RNNLM_Tensorflow():
-    def __init__(self, num_steps, rnn_layers, dense_layers, vocab_size,
-                 init_scale=.1, optimizer="Adagrad", learning_rate=.1, keep_prob=1., decay_rate=1.0, grad_clip=5.):
+class RNNLM_TF_InputStage_Classification:
+    def __init__(self, vocab_size):
+        self.vocab_size = vocab_size
+        self.conf = {
+            "name": "RNNLM_TF_InputStage_Classification",
+            "input_size": 1,
+            "output_size": vocab_size,
+        }
+
+    def input_fn(self, num_steps):
+        inputs = tf.placeholder(tf.int32, [None, num_steps, 1])
+        inputs_squeezed = tf.squeeze(inputs, [2])  # remove last dimension
+        inputs_squeezed = tf.reshape(inputs_squeezed, [-1, num_steps])  # assign static shape
+        outputs = tf.one_hot(inputs_squeezed, self.vocab_size, dtype=tf.float32)
+        return inputs, outputs
+
+
+class RNNLM_TF_OutputStage_Classification:
+    def __init__(self, vocab_size):
+        self.vocab_size = vocab_size
+        self.conf = {
+            "name": "RNNLM_TF_OutputStage_Classification",
+            "input_size": vocab_size,
+            "output_size": vocab_size,
+            "target_size": 1
+        }
+
+    def output_fn(self, outputs):
+        probs = tf.nn.softmax(outputs)
+        return probs
+
+    def loss_fn(self, num_steps, outputs):
+        targets = tf.placeholder(tf.int32, [None, num_steps, 1])
+        batch_size = tf.shape(targets)[0]  # dynamic
+        targets_squeezed = tf.squeeze(targets, [2])  # remove last dimension
+        targets_reshaped = tf.reshape(targets_squeezed, [-1])
+
+        loss = tf.nn.seq2seq.sequence_loss_by_example([outputs],
+                                                      [targets_reshaped],
+                                                      [tf.ones_like(targets_reshaped, dtype=tf.float32)],
+                                                      self.vocab_size)
+        loss = tf.reduce_sum(loss) / tf.cast(batch_size, dtype=tf.float32) / num_steps
+        return targets, loss
+
+
+class RNNLM_TF():
+    def __init__(self, input_stage, output_stage, num_steps, rnn_layers, dense_layers,
+                 init_scale=.1, optimizer="Adagrad", learning_rate=.1, keep_prob=1., grad_clip=5.):
+        """
+        Creates a RNN architecture for language modeling with Tensorflow
+
+        Parameters
+        ----------
+        input_stage: class
+            implements
+              (inputs, outputs) = input_stage.input_fn(num_steps)
+            the function does not contain any trainable variable
+        output_stage: class
+            implements
+              probs = output_stage.output_fn(outputs)
+              targets, loss = output_stage.loss_fn(num_steps, outputs)
+            both functions do not contain any trainable variable
+        num_steps : int
+        rnn_layer : see rnn_stack function
+        dense_layer : see dense_stack function
+        optimizer : "Adam" | "Adagrad"
+        learning_rate : float
+        keep_prob : float [0, 1]
+        grad_clip : float
+        """
+
+        self.input_stage = input_stage
+        self.output_stage = output_stage
 
         self.conf = {
+            "input_stage": input_stage.conf,
+            "output_stage": output_stage.conf,
             "num_steps": num_steps,
             "rnn_layers": rnn_layers,
             "dense_layers": dense_layers,
-            "vocab_size": vocab_size,
             "init_scale": init_scale,
             "learning_rate": learning_rate,
-            "decay_rate": decay_rate,
             "grad_clip": grad_clip,
             "keep_prob": keep_prob,
             "optimizer": optimizer,
@@ -118,67 +201,49 @@ class RNNLM_Tensorflow():
     def _create_model(self):
         tf.reset_default_graph()
 
-        self.inputs = tf.placeholder(tf.int32, [None, self.conf['num_steps'], 1])
-        self.targets = tf.placeholder(tf.int32, [None, self.conf['num_steps'], 1])
-        batch_size = tf.shape(self.inputs)[0]  # dynamic
-
-        # preprocess
-        inputs_squeezed = tf.squeeze(self.inputs, [2])  # remove last dimension
-        targets_squeezed = tf.squeeze(self.targets, [2])  # remove last dimension
-        inputs_squeezed = tf.reshape(inputs_squeezed, [-1, self.conf['num_steps']])  # assign static shape
-        outputs = tf.one_hot(inputs_squeezed, self.conf['vocab_size'], dtype=tf.float32)
+        # input stage
+        self.inputs, outputs = self.input_stage.input_fn(self.conf['num_steps'])
 
         # rnn
         self.keep_prob = tf.Variable(self.conf["keep_prob"], trainable=False, dtype=tf.float32)
-        self.stacked_cell, outputs, self.initial_state, self.final_state = rnn_stack(outputs, self.conf['rnn_layers'], self.keep_prob, scope='rnnlm')
+        ret = rnn_stack(outputs, self.conf['rnn_layers'], self.keep_prob, scope='rnnlm')
+        self.stacked_cell, outputs, self.initial_state, self.final_state = ret
         outputs = tf.reshape(outputs, [-1, self.conf['rnn_layers'][-1]['num_units']])
 
         # dense layers
         self.dense_vars, outputs = dense_stack(outputs, self.conf['dense_layers'], self.conf['init_scale'], scope='rnnlm')
 
-        # output
-        self.logits = outputs
-        self.probs = tf.nn.softmax(self.logits)
-        self.prediction = self.probs
-
-        # loss
-        targets_reshaped = tf.reshape(targets_squeezed, [-1])
-        loss = tf.nn.seq2seq.sequence_loss_by_example([self.logits],
-                                                      [targets_reshaped],
-                                                      [tf.ones_like(targets_reshaped, dtype=tf.float32)],
-                                                      self.conf['vocab_size'])
-        self.cost = tf.reduce_sum(loss) / tf.cast(batch_size, dtype=tf.float32) / self.conf['num_steps']
-        self.loss = self.cost
+        # output stage
+        self.probs = self.output_stage.output_fn(outputs)
+        self.targets, self.loss = self.output_stage.loss_fn(self.conf['num_steps'], outputs)
 
         # train
         self.lr = tf.Variable(self.conf["learning_rate"], trainable=False)
         tvars = tf.trainable_variables()
-        grads, _ = tf.clip_by_global_norm(tf.gradients(self.cost, tvars), self.conf['grad_clip'])
+        grads, _ = tf.clip_by_global_norm(tf.gradients(self.loss, tvars), self.conf['grad_clip'])
         optimizer = TF_Optimizer[self.conf['optimizer']](self.lr)
         self._train = optimizer.apply_gradients(zip(grads, tvars))
         self.need_reset_rnn_state = True  # initialize rnn state
 
-        # generative graph
-        self.g_inputs = tf.placeholder(tf.int32, [None, 1, 1])
-        g_inputs_squeezed = tf.squeeze(self.g_inputs, [2])  # remove last dim
-        g_outputs = tf.one_hot(g_inputs_squeezed, self.conf['vocab_size'], dtype=tf.float32)
-        _, g_outputs, self.g_initial_state, self.g_final_state = rnn_stack(g_outputs, self.conf['rnn_layers'], self.keep_prob, scope='rnnlm', reuse=True)
+        # generative graph, needed to use inputs with num_steps = 1
+        self.g_inputs, g_outputs = self.input_stage.input_fn(1)
+        ret = rnn_stack(g_outputs, self.conf['rnn_layers'], self.keep_prob, scope='rnnlm', reuse=True)
+        _, g_outputs, self.g_initial_state, self.g_final_state = ret
         _, g_outputs = dense_stack(g_outputs, self.conf['dense_layers'], self.conf['init_scale'], scope='rnnlm', reuse=True)
-        self.g_logits = g_outputs
-        self.g_probs = tf.nn.softmax(self.g_logits)
+        self.g_probs = self.output_stage.output_fn(g_outputs)
 
         # saver
         self.saver = tf.train.Saver(max_to_keep=5)  # keep only 5 most recent checkpoints
 
     def _check_conf(self):
         if(len(self.conf['dense_layers']) > 0):
-            assert(self.conf['dense_layers'][-1]['num_units'] == self.conf['vocab_size'])
+            assert(self.conf['dense_layers'][-1]['num_units'] == self.output_stage.conf["input_size"])
         else:
-            assert(self.conf['rnn_layers'][-1]['num_units'] == self.conf['vocab_size'])
+            assert(self.conf['rnn_layers'][-1]['num_units'] == self.output_stage.conf["input_size"])
         assert((self.conf['keep_prob'] >= 0.) and (self.conf['keep_prob'] <= 1.))
 
-    def set_epoch(self, e):
-        self.session.run(tf.assign(self.lr, self.conf["learning_rate"] * (self.conf["decay_rate"] ** e)))
+    def set_learning_rate(self, lr):
+        self.session.run(tf.assign(self.lr, lr))
 
     def new_sequence(self):
         self.need_reset_rnn_state = True
@@ -217,7 +282,7 @@ class RNNLM_Tensorflow():
     def load(self, fn):
         self.saver.restore(self.session, fn)
 
-    def generate(self, priming_seq, length, temperature=1.0):
+    def generate(self, priming_seq, length, temperature=1.0, avoid=[]):
         self._set_keep_prob(1.)
         state = self.session.run(self.stacked_cell.zero_state(1, tf.float32))
         x = np.zeros((1, 1, 1))
@@ -235,7 +300,7 @@ class RNNLM_Tensorflow():
             feed = {self.g_inputs: x, self.g_initial_state: state}
             [probs, state] = self.session.run([self.g_probs, self.g_final_state], feed)
             probs = probs[0]  # batch_size = 1
-            sym = sample(probs, temperature=temperature)
+            sym = sample(probs, temperature=temperature, avoid=avoid)
             out.append(sym)
 
         return out
