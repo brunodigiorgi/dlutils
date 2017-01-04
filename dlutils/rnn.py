@@ -131,6 +131,21 @@ class RNNLM_TF_InputStage_Classification:
         return inputs, outputs
 
 
+class RNNLM_TF_InputStage_Regression:
+    def __init__(self, input_size):
+        self.input_size = input_size
+        self.conf = {
+            "name": "RNNLM_TF_InputStage_Regression",
+            "input_size": input_size,
+            "output_size": input_size,
+        }
+
+    def input_fn(self, num_steps):
+        inputs = tf.placeholder(tf.float32, [None, num_steps, self.input_size])
+        outputs = inputs
+        return inputs, outputs
+
+
 class RNNLM_TF_OutputStage_Classification:
     def __init__(self, vocab_size):
         self.vocab_size = vocab_size
@@ -159,13 +174,26 @@ class RNNLM_TF_OutputStage_Classification:
         return targets, loss
 
 
-def traverse(o, tree_types=(list, tuple)):
-    if isinstance(o, tree_types):
-        for value in o:
-            for subvalue in traverse(value, tree_types):
-                yield subvalue
-    else:
-        yield o
+class RNNLM_TF_OutputStage_Regression:
+    def __init__(self, output_size):
+        self.output_size = output_size
+        self.conf = {
+            "name": "RNNLM_TF_OutputStage_Regression",
+            "input_size": output_size,
+            "output_size": output_size,
+            "target_size": output_size
+        }
+
+    def output_fn(self, outputs):
+        return outputs
+
+    def loss_fn(self, num_steps, outputs):
+        targets = tf.placeholder(tf.float32, [None, num_steps, self.output_size])
+        targets_reshaped = tf.reshape(targets, tf.shape(outputs))
+
+        # mean square error
+        loss = tf.reduce_mean(tf.square(outputs - targets_reshaped))
+        return targets, loss
 
 
 class RNNLM_TF():
@@ -248,7 +276,7 @@ class RNNLM_TF():
         ret = rnn_stack(g_outputs, self.conf['rnn_layers'], self.keep_prob, scope='rnnlm', reuse=True)
         _, g_outputs, self.g_initial_state, self.g_final_state = ret
         _, g_outputs = dense_stack(g_outputs, self.conf['dense_layers'], self.conf['init_scale'], scope='rnnlm', reuse=True)
-        self.g_probs = self.output_stage.output_fn(g_outputs)
+        self.g_outputs = self.output_stage.output_fn(g_outputs)
 
         # saver
         self.saver = tf.train.Saver(max_to_keep=5)  # keep only 5 most recent checkpoints
@@ -326,10 +354,33 @@ class RNNLM_TF():
         for i in range(length):
             x[0, 0, 0] = sym
             feed = {self.g_inputs: x, self.g_initial_state: state}
-            [probs, state] = self.session.run([self.g_probs, self.g_final_state], feed)
+            [probs, state] = self.session.run([self.g_outputs, self.g_final_state], feed)
             probs = probs[0]  # batch_size = 1
             sym = sample(probs, temperature=temperature, avoid=avoid)
             out.append(sym)
+
+        return out
+
+    def generate_reg(self, priming_seq, length):
+        self._set_keep_prob(1.)
+        state = self.session.run(self.stacked_cell.zero_state(1, tf.float32))
+        assert(priming_seq.shape[1] == self.input_stage.conf["input_size"])
+        x = np.zeros((1, 1, priming_seq.shape[1]))
+
+        for input_ in priming_seq[:-1]:
+            x[0, 0, :] = input_
+            feed = {self.g_inputs: x, self.g_initial_state: state}
+            [state] = self.session.run([self.g_final_state], feed)
+
+        out = np.zeros([length, self.output_stage.conf["output_size"]])
+        input_ = priming_seq[-1]
+        for i in range(length):
+            x[0, 0, :] = input_
+            feed = {self.g_inputs: x, self.g_initial_state: state}
+            [out_, state] = self.session.run([self.g_outputs, self.g_final_state], feed)
+            out_ = out_[0]  # batch_size = 1
+            input_ = out_  # feedback
+            out[i, :] = out_
 
         return out
 

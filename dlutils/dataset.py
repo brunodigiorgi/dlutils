@@ -27,6 +27,7 @@ def frame_ndarray(a, frame_size, hop_size):
     if(nframes < 0):
         nframes = 0
     b = np.zeros([nframes, frame_size] + list(other_dim), dtype=a.dtype)
+
     for i in range(nframes):
         b[i] = a[i * hop_size: i * hop_size + frame_size]
     return b
@@ -39,6 +40,7 @@ def format_sequence(in_seq, target_seq, batch_size, num_steps, overlap=.5):
     Each ndarray has dim=[batch_size, num_steps, input_size]
     """
     assert(len(in_seq) == len(target_seq))
+    assert(len(in_seq) > num_steps)
     data_len = len(in_seq)
     batch_len = data_len // batch_size
     hop_size = batch_len
@@ -52,7 +54,7 @@ def format_sequence(in_seq, target_seq, batch_size, num_steps, overlap=.5):
 
     # make sure that hop_size is not a multiple of num_steps (for variety in batches)
     # Effectiveness of this step is not yet proved
-    if(hop_size % num_steps == 0):
+    if((hop_size % num_steps == 0) and (hop_size > 1)):
         hop_size -= 1
         batch_len = data_len - hop_size * last_batch
 

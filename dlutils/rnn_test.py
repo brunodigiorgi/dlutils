@@ -90,7 +90,7 @@ class RNNTest:
                 # test epoch
                 if(self.nfolds > 1):
                     test_loss = epoch_loop(di_test, self.model.test, self.logger.test_step)
-                    self.logger.test_epoch(test_loss, log_epoch - 1)
+                    self.logger.test_epoch(test_loss, log_epoch)
 
                 # save
                 if(iepoch >= save_epoch + self.conf["save_every"]):
