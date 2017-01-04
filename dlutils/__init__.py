@@ -2,3 +2,4 @@ from .dataset import Dataset_seq2seq, DatasetIterator, DatasetTranslator, OneHot
 from .rnn import RNNLM_TF, RNNLM_TF_InputStage_Classification, RNNLM_TF_OutputStage_Classification
 from .logger import HtmlLogger
 from .rnn_test import RNNTest
+from .data_gen import gen_data_seq2seq, expected_cross_entropy

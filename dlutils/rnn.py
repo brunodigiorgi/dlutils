@@ -2,15 +2,22 @@ import tensorflow as tf
 import numpy as np
 
 
-TF_activation = {
+TF_ACTIVATION = {
     "relu": tf.nn.relu,
     "sigmoid": tf.sigmoid,
     "tanh": tf.tanh
 }
 
-TF_Optimizer = {
+TF_OPTIMIZER = {
     "Adam": tf.train.AdamOptimizer,
     "Adagrad": tf.train.AdagradOptimizer,
+}
+
+TF_RNN_CELL = {
+    "Basic": tf.nn.rnn_cell.BasicRNNCell,
+    "BasicLSTM": tf.nn.rnn_cell.BasicLSTMCell,
+    "GRU": tf.nn.rnn_cell.GRUCell,
+    "LSTM": tf.nn.rnn_cell.LSTMCell,
 }
 
 
@@ -20,7 +27,7 @@ def rnn_stack(x, layers, keep_prob, scope=None, reuse=False):
     ----------
     x : Tensor with shape [None (batch_size), num_steps, input_size]
     layers : list of dict
-        [{"num_units": int}, ...]
+        [{"num_units": int, "cell_type": "Basic"|"BasicLSTM"|"GRU"|"LSTM"}, ...]
     keep_prob : unit Tensor
 
     Returns
@@ -30,12 +37,14 @@ def rnn_stack(x, layers, keep_prob, scope=None, reuse=False):
     outputs : Tensor with shape [None (batch_size), layers[-1]['num_units']]
     """
     with tf.variable_scope(scope, reuse=reuse):
-        lstm_cells = []
+        cell_list = []
         for layer in layers:
-            lstm = tf.nn.rnn_cell.BasicLSTMCell(layer['num_units'])
-            lstm = tf.nn.rnn_cell.DropoutWrapper(lstm, keep_prob)
-            lstm_cells.append(lstm)
-        stacked_cell = tf.nn.rnn_cell.MultiRNNCell(lstm_cells)
+            nunits = layer['num_units']
+            cell_type = layer.get('cell_type', 'BasicLSTM')
+            cell = TF_RNN_CELL[cell_type](nunits)
+            cell = tf.nn.rnn_cell.DropoutWrapper(cell, keep_prob)
+            cell_list.append(cell)
+        stacked_cell = tf.nn.rnn_cell.MultiRNNCell(cell_list)
 
         initial_state = stacked_cell.zero_state(tf.shape(x)[0], dtype=tf.float32)
         x_ = tf.unpack(x, axis=1)  # create list of different time steps
@@ -69,7 +78,7 @@ def dense_stack(x, layers, init_stddev=0.1, scope=None, reuse=False):
             dense_b = tf.get_variable("dense" + str(i) + "_b", [d['num_units']])
             out = tf.matmul(out, dense_w) + dense_b
             if("activation" in d):
-                out = TF_activation[d["activation"]](out)
+                out = TF_ACTIVATION[d["activation"]](out)
             in_size = d['num_units']
             net_vars.append(dense_w)
             net_vars.append(dense_b)
@@ -150,6 +159,15 @@ class RNNLM_TF_OutputStage_Classification:
         return targets, loss
 
 
+def traverse(o, tree_types=(list, tuple)):
+    if isinstance(o, tree_types):
+        for value in o:
+            for subvalue in traverse(value, tree_types):
+                yield subvalue
+    else:
+        yield o
+
+
 class RNNLM_TF():
     def __init__(self, input_stage, output_stage, num_steps, rnn_layers, dense_layers,
                  init_scale=.1, optimizer="Adagrad", learning_rate=.1, keep_prob=1., grad_clip=5.):
@@ -221,7 +239,7 @@ class RNNLM_TF():
         self.lr = tf.Variable(self.conf["learning_rate"], trainable=False)
         tvars = tf.trainable_variables()
         grads, _ = tf.clip_by_global_norm(tf.gradients(self.loss, tvars), self.conf['grad_clip'])
-        optimizer = TF_Optimizer[self.conf['optimizer']](self.lr)
+        optimizer = TF_OPTIMIZER[self.conf['optimizer']](self.lr)
         self._train = optimizer.apply_gradients(zip(grads, tvars))
         self.need_reset_rnn_state = True  # initialize rnn state
 
@@ -246,6 +264,10 @@ class RNNLM_TF():
         self.session.run(tf.assign(self.lr, lr))
 
     def new_sequence(self):
+        """
+        To be called before train() when starting a new sequence
+        Make sure that, for the next training batch, rnn state will be re-initialized
+        """
         self.need_reset_rnn_state = True
 
     def initialize(self):
@@ -260,10 +282,16 @@ class RNNLM_TF():
             self.state = self.session.run(self.initial_state, feed)
             self.need_reset_rnn_state = False
 
+        # rnn state feedback
+        feed[self.initial_state] = self.state
+
+        # for s, val in zip(traverse(self.initial_state), traverse(self.state)):
+        #     feed[s] = val
+
         # feedback rnn state
-        for i, (c, h) in enumerate(self.initial_state):
-            feed[c] = self.state[i].c  # cell state
-            feed[h] = self.state[i].h  # hidden state
+        # for i, (c, h) in enumerate(self.initial_state):
+        #     feed[c] = self.state[i].c  # cell state
+        #     feed[h] = self.state[i].h  # hidden state
 
         _, loss, self.state = self.session.run([self._train, self.loss, self.final_state], feed)
         return loss

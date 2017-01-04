@@ -8,6 +8,18 @@ import os
 import math
 
 
+def epoch_loop(dataset_iterator, model_fn, log_fn):
+    loss, count = 0, 0
+    iepoch = math.floor(dataset_iterator.epochs)
+    while(dataset_iterator.epochs <= iepoch + 1):
+        inputs_, targets_ = dataset_iterator.produce()
+        loss_ = model_fn(inputs_, targets_)
+        loss += loss_
+        count += 1
+        log_fn(loss_, dataset_iterator.epochs)
+    return loss / count
+
+
 class RNNTest:
     def __init__(self, dataset, model, logger=None,
                  nfolds=5, max_fold=None, proportion=1,
@@ -70,29 +82,17 @@ class RNNTest:
             for iepoch in range(self.conf['max_epochs']):
                 self.logger.new_epoch(iepoch)
 
-                # train for an epoch
-                train_ev_, count = 0, 0
-                while(di_train.epochs <= iepoch + 1):
-                    inputs_, targets_ = di_train.produce()
-                    train_ev__ = self.model.train(inputs_, targets_)
-                    train_ev_ += train_ev__
-                    count += 1
-                    self.logger.append_step(count, train_ev__, di_train.epochs)
-
-                train_ev = train_ev_ / count
+                # train epoch
+                train_loss = epoch_loop(di_train, self.model.train, self.logger.train_step)
                 log_epoch = math.floor(di_train.epochs)
-                self.logger.append_train_ev(train_ev, log_epoch - 1)
+                self.logger.train_epoch(train_loss, log_epoch)
 
-                # test
+                # test epoch
                 if(self.nfolds > 1):
-                    test_ev_, count = 0, 0
-                    while(di_test.epochs <= iepoch + 1):
-                        inputs_, targets_ = di_test.produce()
-                        test_ev_ += self.model.test(inputs_, targets_)
-                        count += 1
-                    test_ev = test_ev_ / count
-                    self.logger.append_test_ev(test_ev, log_epoch - 1)
+                    test_loss = epoch_loop(di_test, self.model.test, self.logger.test_step)
+                    self.logger.test_epoch(test_loss, log_epoch - 1)
 
+                # save
                 if(iepoch >= save_epoch + self.conf["save_every"]):
                     model_fn = self.model_id + '_' + str(i_fold) + "_" + str(iepoch) + ".ckpt"
                     model_fn = os.path.join(self.model_path, model_fn)

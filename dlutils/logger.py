@@ -12,10 +12,8 @@ class Logger:
     Interface for the Logger class
     """
 
-    def __init__(self, print_every=20):
-        self.print_every = print_every
-        self.cum_loss = 0
-        pass
+    def __init__(self, log_every_step=20):
+        self.log_every_step = log_every_step
 
     def new_model(self, conf, model_id=None):
         print('*** new model ***')
@@ -26,22 +24,28 @@ class Logger:
 
     def new_epoch(self, iepoch):
         print('*** epoch:', iepoch)
-        self.cum_loss = 0
+        self.train_loss = [0, 0]
+        self.test_loss = [0, 0]
 
-    def append_step(self, step, loss, epochs):
-        self.cum_loss += loss
-        if((step % self.print_every) == 0):
-            print('step:', step, '(%.3f) average loss:' % (epochs), self.cum_loss / self.print_every)
-            self.cum_loss = 0
+    def train_step(self, loss, epochs):
+        self.train_loss[0] += loss
+        self.train_loss[1] += 1
+        if(self.train_loss[1] % self.log_every_step == 0):
+            print('epoch: %.2f, train loss: %.3f' % (epochs, self.train_loss[0] / self.train_loss[1]))
+            self.train_loss = [0, 0]
 
-    def append_train_ev(self, train_ev, epoch):
-        print('epoch:', epoch, 'train ev:', train_ev)
+    def test_step(self, loss, epochs):
+        self.test_loss[0] += loss
+        self.test_loss[1] += 1
+        if(self.test_loss[1] % self.log_every_step == 0):
+            print('epoch: %.2f, test loss: %.3f' % (epochs, self.test_loss[0] / self.test_loss[1]))
+            self.test_loss = [0, 0]
 
-    def append_test_ev(test_ev, epoch):
-        print('epoch:', epoch, 'test ev:', test_ev)
+    def train_epoch(self, train_ev, epoch):
+        print('epoch:', epoch, 'train loss:', train_ev)
 
-    def set_current_epoch(self, epoch):
-        print('current epoch:', epoch)
+    def test_epoch(test_ev, epoch):
+        print('epoch:', epoch, 'test loss:', test_ev)
 
 
 class LoggerComposite(Logger):
@@ -78,15 +82,16 @@ class LoggerComposite(Logger):
 
 
 class HtmlLogger(Logger):
-    def __init__(self, log_path, ylabel, log_delta_sec=60):
+    def __init__(self, log_path, ylabel, log_every_step=50, log_delta_sec=30):
         if(not os.path.exists(log_path)):
             os.mkdir(log_path)
         self.log_path = log_path
         self.template = resource_string('dlutils.resources', 'LogTemplate.html_template').decode('utf-8')
         self.ylabel = ylabel
+
         self.log_delta_sec = log_delta_sec
-        self.log_time = time.time()
-        self.cum_loss = 0
+        self.log_time = time.time() - self.log_delta_sec
+        self.log_every_step = log_every_step
 
     def new_model(self, conf, model_id=None):
         self.conf = conf
@@ -96,11 +101,12 @@ class HtmlLogger(Logger):
         self.json_filename = os.path.join(self.log_path, self.model_id + '.json')
         self.html_filename = os.path.join(self.log_path, self.model_id + '.html')
 
-        self.train_ev = []
-        self.train_epochs = []
+        self.train_loss = []
+        self.train_loss_step = []
+        self.test_loss = []
+        self.test_loss_step = []
         self.train_time = []
-        self.test_ev = []
-        self.test_epochs = []
+
         self.i_fold = 0
         self.current_epoch = 0
         self.current_state_str = ''
@@ -108,51 +114,51 @@ class HtmlLogger(Logger):
         self._write()
 
     def new_fold(self):
-        self.train_ev.append([])
-        self.train_epochs.append([])
+        self.train_loss.append([])
+        self.train_loss_step.append([])
+        self.test_loss.append([])
+        self.test_loss_step.append([])
         self.train_time.append([])
-        self.test_ev.append([])
-        self.test_epochs.append([])
-        self.i_fold = len(self.train_ev) - 1
+        self.i_fold = len(self.train_loss) - 1
 
     def new_epoch(self, iepoch):
         self.current_epoch = iepoch
-        self.cum_loss = 0
 
-    def append_step(self, step, loss, epochs):
-        self.cum_loss += loss
-        if(time.time() - self.log_time > self.log_delta_sec):
-            self.log_time = time.time()
-            self.current_state_str = 'epoch: (%.3f) average loss: %.4f' % (epochs, self.cum_loss / step)
-
-    def append_train_ev(self, train_ev, epoch):
-        self.train_ev[self.i_fold].append(train_ev)
-        self.train_epochs[self.i_fold].append(epoch)
-        self.train_time[self.i_fold].append(time.time())
-        if(len(self.train_time[0]) >= 2):
-            self.epoch_eta = np.mean(np.diff(np.concatenate(self.train_time)))
-        self.current_epoch = epoch + 1
+    def train_step(self, loss, epoch):
+        self.train_loss_step[self.i_fold].append((float(epoch), float(loss)))
+        self.current_epoch = epoch
         self._write()
 
-    def append_test_ev(self, test_ev, epoch):
-        self.test_ev[self.i_fold].append(test_ev)
-        self.test_epochs[self.i_fold].append(epoch)
-        self.current_epoch = epoch + 1
+    def test_step(self, loss, epoch):
+        self.test_loss_step[self.i_fold].append((float(epoch), float(loss)))
+        self._write()
+
+    def train_epoch(self, loss, epoch):
+        self.train_loss[self.i_fold].append((epoch, loss))
+        self.train_time[self.i_fold].append(time.time())
+        self.current_epoch = epoch
+        self._write()
+
+    def test_epoch(self, loss, epoch):
+        self.test_loss[self.i_fold].append((epoch, loss))
         self._write()
 
     def _write(self):
-        self._write_json()
-        self._write_html()
+        if(time.time() - self.log_time > self.log_delta_sec):
+            self.log_time = time.time()
+            if(len(self.train_time) > 0 and len(self.train_time[0]) >= 2):  # at least two records
+                self.epoch_eta = np.mean(np.diff(np.concatenate(self.train_time)))
+
+            self._write_json()
+            self._write_html()
 
     def _write_json(self):
         data = {
             "model_id": self.model_id,
             "conf": self.conf,
-            "train_ev": self.train_ev,
-            "train_epochs": self.train_epochs,
+            "train_loss": self.train_loss,
             "train_time": self.train_time,
-            "test_ev": self.test_ev,
-            "test_epochs": self.test_epochs,
+            "test_loss": self.test_loss,
             "current_state": {
                 "ifold": self.i_fold,
                 "epoch": self.current_epoch,
@@ -170,9 +176,28 @@ class HtmlLogger(Logger):
         current_state = json.dumps(self.current_state_str)
 
         plotter = PlotlyPlotter()
-        for i, (tr_ep, tr_ev, te_ep, te_ev) in enumerate(zip(self.train_epochs, self.train_ev, self.test_epochs, self.test_ev)):
-            plotter.add_trace(x=tr_ep, y=tr_ev, name="train_" + str(i), color=(0, i))
-            plotter.add_trace(x=te_ep, y=te_ev, name="test_" + str(i), color=(1, i))
+
+        def invnest(x):
+            return [[x_[0] for x_ in x], [x_[1] for x_ in x]]
+
+        def aggregate_steps(x, steps=self.log_every_step):
+            x_ = x[0]
+            y_ = x[1]
+            assert(len(x_) == len(y_))
+            n = len(x_) // steps
+            y_ = np.mean(np.reshape(y_[:n * steps], [n, steps]), axis=-1).tolist()
+            return x_[steps - 1::steps], y_
+
+        self.train_loss_step
+        self.test_loss_step
+
+        for i, (tr, trs, te, tes) in enumerate(zip(self.train_loss, self.train_loss_step, self.test_loss, self.test_loss_step)):
+            tr, trs, te, tes = invnest(tr), invnest(trs), invnest(te), invnest(tes)
+            trs, tes = aggregate_steps(trs), aggregate_steps(tes)
+            plotter.add_trace(x=tr[0], y=tr[1], mode="lines+markers", name="train_" + str(i), color=(0, i))
+            plotter.add_trace(x=trs[0], y=trs[1], name="train_step" + str(i), width=.5, color=(0, i))
+            plotter.add_trace(x=te[0], y=te[1], mode="lines+markers", name="test_" + str(i), color=(1, i))
+            plotter.add_trace(x=tes[0], y=tes[1], name="test_step" + str(i), width=.5, color=(1, i))
 
         plot_code = plotter.generate_js()
         ylabel = json.dumps(self.ylabel)

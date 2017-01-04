@@ -21,7 +21,7 @@ def gen_data_seq2seq(size, in_size, out_size, deps_list=[]):
 
     Results
     -------
-    X : np.array 
+    X : np.array
         input data
     Y : np.array
         target_data
