@@ -114,6 +114,33 @@ def sample(probs, temperature=1.0, avoid=[]):
     return out
 
 
+class RNNLM_TF_FeedbackStage_Sampler:
+    def __init__(self, temperature=1.0, avoid=[]):
+        self.temperature = temperature
+        self.avoid = avoid
+        self.conf = {
+            "name": "RNNLM_TF_FeedbackNoop",
+            "avoid": avoid,
+            "temperature": temperature,
+        }
+
+    def __call__(self, out):
+        np.seterr(under='ignore')  # for calling sample()
+        out = sample(out, temperature=self.temperature, avoid=self.avoid)
+        out = np.array((out,), dtype=np.int32)
+        next_input = out
+        return next_input, out
+
+
+class RNNLM_TF_FeedbackStage_Noop:
+    def __init__(self):
+        self.conf = {"name": "RNNLM_TF_FeedbackNoop"}
+        pass
+
+    def __call__(self, out):
+        return out, out
+
+
 class RNNLM_TF_InputStage_Classification:
     def __init__(self, vocab_size):
         self.vocab_size = vocab_size
@@ -197,7 +224,7 @@ class RNNLM_TF_OutputStage_Regression:
 
 
 class RNNLM_TF():
-    def __init__(self, input_stage, output_stage, num_steps, rnn_layers, dense_layers,
+    def __init__(self, input_stage, output_stage, feedback_stage, num_steps, rnn_layers, dense_layers,
                  init_scale=.1, optimizer="Adagrad", learning_rate=.1, keep_prob=1., grad_clip=5.):
         """
         Creates a RNN architecture for language modeling with Tensorflow
@@ -224,10 +251,12 @@ class RNNLM_TF():
 
         self.input_stage = input_stage
         self.output_stage = output_stage
+        self.feedback_stage = feedback_stage
 
         self.conf = {
             "input_stage": input_stage.conf,
             "output_stage": output_stage.conf,
+            "feedback_stage": feedback_stage.conf,
             "num_steps": num_steps,
             "rnn_layers": rnn_layers,
             "dense_layers": dense_layers,
@@ -341,47 +370,26 @@ class RNNLM_TF():
     def generate(self, priming_seq, length, temperature=1.0, avoid=[]):
         self._set_keep_prob(1.)
         state = self.session.run(self.stacked_cell.zero_state(1, tf.float32))
-        x = np.zeros((1, 1, 1))
-        np.seterr(under='ignore')  # for calling sample()
-
-        for sym in priming_seq[:-1]:
-            x[0, 0, 0] = sym
-            feed = {self.g_inputs: x, self.g_initial_state: state}
-            [state] = self.session.run([self.g_final_state], feed)
-
-        out = []
-        sym = priming_seq[-1]
-        for i in range(length):
-            x[0, 0, 0] = sym
-            feed = {self.g_inputs: x, self.g_initial_state: state}
-            [probs, state] = self.session.run([self.g_outputs, self.g_final_state], feed)
-            probs = probs[0]  # batch_size = 1
-            sym = sample(probs, temperature=temperature, avoid=avoid)
-            out.append(sym)
-
-        return out
-
-    def generate_reg(self, priming_seq, length):
-        self._set_keep_prob(1.)
-        state = self.session.run(self.stacked_cell.zero_state(1, tf.float32))
-        assert(priming_seq.shape[1] == self.input_stage.conf["input_size"])
-        x = np.zeros((1, 1, priming_seq.shape[1]))
+        x = np.zeros((1, 1, self.input_stage.conf["input_size"]))
 
         for input_ in priming_seq[:-1]:
             x[0, 0, :] = input_
             feed = {self.g_inputs: x, self.g_initial_state: state}
             [state] = self.session.run([self.g_final_state], feed)
 
-        out = np.zeros([length, self.output_stage.conf["output_size"]])
+        out = []
         input_ = priming_seq[-1]
         for i in range(length):
             x[0, 0, :] = input_
             feed = {self.g_inputs: x, self.g_initial_state: state}
             [out_, state] = self.session.run([self.g_outputs, self.g_final_state], feed)
             out_ = out_[0]  # batch_size = 1
-            input_ = out_  # feedback
-            out[i, :] = out_
 
+            input_, out_ = self.feedback_stage(out_)
+            assert((input_.size == self.input_stage.conf["input_size"]) and
+                   (out_.size == self.output_stage.conf["target_size"]))
+
+            out.append(out_)
         return out
 
     def print_trainable(self):
