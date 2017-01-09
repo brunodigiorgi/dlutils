@@ -100,6 +100,7 @@ class HtmlLogger(Logger):
             self.model_id = strftime("%Y%m%d%H%M%S", localtime())
         self.json_filename = os.path.join(self.log_path, self.model_id + '.json')
         self.html_filename = os.path.join(self.log_path, self.model_id + '.html')
+        print('new model: ', self.json_filename, self.html_filename)
 
         self.train_loss = []
         self.train_loss_step = []
@@ -137,14 +138,14 @@ class HtmlLogger(Logger):
         self.train_loss[self.i_fold].append((epoch, loss))
         self.train_time[self.i_fold].append(time.time())
         self.current_epoch = epoch
-        self._write()
+        self._write(force=True)
 
     def test_epoch(self, loss, epoch):
         self.test_loss[self.i_fold].append((epoch, loss))
-        self._write()
+        self._write(force=True)
 
-    def _write(self):
-        if(time.time() - self.log_time > self.log_delta_sec):
+    def _write(self, force=False):
+        if(force or (time.time() - self.log_time > self.log_delta_sec)):
             self.log_time = time.time()
             if(len(self.train_time) > 0 and len(self.train_time[0]) >= 2):  # at least two records
                 self.epoch_eta = np.mean(np.diff(np.concatenate(self.train_time)))

@@ -69,27 +69,6 @@ def format_sequence(in_seq, target_seq, batch_size, num_steps, overlap=.5):
     return out
 
 
-class DatasetAugmentation:
-    def __init__(self):
-        pass
-
-    def __call__(self, seq):
-        """
-        Transform an input sequence into other sequences useful for learning data invariances.
-
-        Parameters
-        ----------
-        seq : numpy ndarray
-            input sequence [nframes x frame_size]
-
-        Return
-        ------
-        seqs : list of numpy ndarray
-            a list of all the transformed sequences
-        """
-        return []
-
-
 class OneHotEncoder:
     """
     Callable, given a sequence of int returns the one hot representation as a numpy matrix with shape [len(seq), size]

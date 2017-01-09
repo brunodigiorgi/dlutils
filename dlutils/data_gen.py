@@ -1,6 +1,8 @@
 import numpy as np
 import itertools
 
+# TODO: generate real valued sequences: totally random and with some dependencies (gaussians)
+
 
 def gen_data_seq2seq(size, in_size, out_size, deps_list=[]):
     """

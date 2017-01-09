@@ -11,6 +11,7 @@ TF_ACTIVATION = {
 TF_OPTIMIZER = {
     "Adam": tf.train.AdamOptimizer,
     "Adagrad": tf.train.AdagradOptimizer,
+    "RMSProp": tf.train.RMSPropOptimizer,
 }
 
 TF_RNN_CELL = {
