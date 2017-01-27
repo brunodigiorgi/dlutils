@@ -1,7 +1,7 @@
 from sklearn import cross_validation
 import time
 from random import shuffle
-from .dataset import DatasetIterator
+from ..dataset.rnn import DatasetIterator
 from .logger import Logger
 from time import localtime, strftime
 import os
@@ -20,7 +20,7 @@ def epoch_loop(dataset_iterator, model_fn, log_fn):
     return loss / count
 
 
-class RNNTest:
+class Trainer:
     def __init__(self, dataset, model, logger=None,
                  nfolds=5, max_fold=None, proportion=1,
                  max_epochs=1000, save_every=100, model_path='models/'):
@@ -61,7 +61,7 @@ class RNNTest:
         else:
             self.k_fold = [(self.list_seq, self.list_seq)]
 
-    def test(self, contd=False):
+    def train(self, contd=False):
         self.logger.new_model(self.conf, self.model_id)
 
         for i_fold, (train_set, test_set) in enumerate(self.k_fold):
