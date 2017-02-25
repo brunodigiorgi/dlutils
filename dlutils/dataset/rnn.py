@@ -53,6 +53,9 @@ def LM_input_and_targets_from_inputs(x):
     x_out = []
     y_out = []
     for i in range(len(x)):
+        if(len(x[i]) < 2):
+            print("Warning: sequence with length < 2 found.")
+            continue
         x_out.append(x[i][0:-1])
         y_out.append(x[i][1:])
     return x_out, y_out
