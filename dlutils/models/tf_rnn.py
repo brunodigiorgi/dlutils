@@ -175,8 +175,15 @@ class RNNLM_TF_OutputStage_Regression:
 
         # mean square error
         loss = tf.square(outputs_flat - targets_flat)
-        loss = tf.boolean_mask(loss, seqlen_mask_flat)
-        loss = tf.reduce_mean(loss)
+
+        # boolean mask produces a UserWarning regarding the gradient
+        # "Converting sparse IndexedSlices to a dense Tensor of unknown shape."
+        # loss = tf.boolean_mask(loss, seqlen_mask_flat)
+        # loss = tf.reduce_mean(loss)
+
+        # equivalent but no Warning
+        loss *= tf.cast(seqlen_mask_flat, dtype=tf.float32)
+        loss = tf.reduce_sum(loss) / tf.cast(tf.reduce_sum(seqlen), dtype=tf.float32)
 
         return targets, loss
 
