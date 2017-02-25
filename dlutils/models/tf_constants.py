@@ -14,8 +14,8 @@ TF_OPTIMIZER = {
 }
 
 TF_RNN_CELL = {
-    "Basic": tf.nn.rnn_cell.BasicRNNCell,
-    "BasicLSTM": tf.nn.rnn_cell.BasicLSTMCell,
-    "GRU": tf.nn.rnn_cell.GRUCell,
-    "LSTM": tf.nn.rnn_cell.LSTMCell,
+    "Basic": tf.contrib.rnn.BasicRNNCell,
+    "BasicLSTM": tf.contrib.rnn.BasicLSTMCell,
+    "GRU": tf.contrib.rnn.GRUCell,
+    "LSTM": tf.contrib.rnn.LSTMCell,
 }

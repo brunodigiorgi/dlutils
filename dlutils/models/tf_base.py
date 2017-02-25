@@ -1,13 +1,13 @@
 import tensorflow as tf
-import numpy as np
 from . import tf_constants
 
 
-def rnn_stack(x, layers, keep_prob, scope=None, reuse=False):
+def rnn_stack(x, sequence_length, layers, keep_prob, scope=None, reuse=False):
     """
     Parameters
     ----------
-    x : Tensor with shape [None (batch_size), num_steps, input_size]
+    x : Tensor with shape [None (batch_size), max(sequence_length), input_size]
+    sequence_length : Tensor of tf.int32 with shape [None]
     layers : list of dict
         [{"num_units": int, "cell_type": "Basic"|"BasicLSTM"|"GRU"|"LSTM"}, ...]
     keep_prob : unit Tensor
@@ -24,14 +24,12 @@ def rnn_stack(x, layers, keep_prob, scope=None, reuse=False):
             nunits = layer['num_units']
             cell_type = layer.get('cell_type', 'BasicLSTM')
             cell = tf_constants.TF_RNN_CELL[cell_type](nunits)
-            cell = tf.nn.rnn_cell.DropoutWrapper(cell, keep_prob)
+            cell = tf.contrib.rnn.DropoutWrapper(cell, keep_prob)
             cell_list.append(cell)
-        stacked_cell = tf.nn.rnn_cell.MultiRNNCell(cell_list)
+        stacked_cell = tf.contrib.rnn.MultiRNNCell(cell_list)
 
         initial_state = stacked_cell.zero_state(tf.shape(x)[0], dtype=tf.float32)
-        x_ = tf.unpack(x, axis=1)  # create list of different time steps
-        outputs, final_state = tf.nn.seq2seq.rnn_decoder(x_, initial_state, stacked_cell)
-        outputs = tf.concat(1, outputs)
+        outputs, final_state = tf.nn.dynamic_rnn(cell=stacked_cell, inputs=x, sequence_length=sequence_length, initial_state=initial_state)
 
     return stacked_cell, outputs, initial_state, final_state
 

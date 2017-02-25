@@ -1,7 +1,7 @@
-from sklearn import cross_validation
+from sklearn.model_selection import KFold
+import numpy as np
 import time
-from random import shuffle
-from ..dataset.rnn import DatasetIterator
+from ..dataset.rnn import Dataset_seq2seq_iterator
 from .logger import Logger
 from time import localtime, strftime
 import os
@@ -12,8 +12,8 @@ def epoch_loop(dataset_iterator, model_fn, log_fn):
     loss, count = 0, 0
     iepoch = math.floor(dataset_iterator.epochs)
     while(dataset_iterator.epochs <= iepoch + 1):
-        inputs_, targets_ = dataset_iterator.produce()
-        loss_ = model_fn(inputs_, targets_)
+        inputs_, targets_, seqlen_ = dataset_iterator.next_batch()
+        loss_ = model_fn(inputs_, targets_, seqlen_)
         loss += loss_
         count += 1
         log_fn(loss_, dataset_iterator.epochs)
@@ -21,20 +21,25 @@ def epoch_loop(dataset_iterator, model_fn, log_fn):
 
 
 class Trainer:
-    def __init__(self, dataset, model, logger=None,
+    def __init__(self, dataset, model, batch_size, logger=None,
                  nfolds=5, max_fold=None, proportion=1,
                  max_epochs=1000, save_every=100, model_path='models/'):
         self.dataset = dataset
         self.model = model
+        self.batch_size = int(batch_size)
+
         self.logger = logger
         if(self.logger is None):
             self.logger = Logger()
+
         self.nfolds = nfolds
         assert(self.nfolds > 0)
         self.max_fold = max_fold
         if(self.max_fold is None):
             self.max_fold = self.nfolds
+
         assert((self.max_fold > 0) and (self.max_fold <= self.nfolds))
+
         self.proportion = proportion
         self.max_epochs = max_epochs
         self.model_path = model_path
@@ -46,6 +51,7 @@ class Trainer:
             "max_epochs": self.max_epochs,
             "proportion": self.proportion,
             "nfolds": self.nfolds,
+            "batch_size": self.batch_size,
             "model": {},
             "dataset": {}
         }
@@ -54,12 +60,12 @@ class Trainer:
 
         self.model_id = strftime("%Y%m%d%H%M%S", localtime())
 
-        self.list_seq = list(range(int(dataset.nseq * self.proportion)))
-        shuffle(self.list_seq)
+        self.list_seq = np.arange(int(dataset.nseq * self.proportion), dtype=np.int).reshape(-1, 1)
         if(self.nfolds > 1):
-            self.k_fold = cross_validation.KFold(n=len(self.list_seq), n_folds=nfolds)
+            kf = KFold(n_splits=nfolds, shuffle=True)
+            self.k_fold = list(kf.split(self.list_seq))
         else:
-            self.k_fold = [(self.list_seq, self.list_seq)]
+            self.k_fold = [(self.list_seq[:, 0], self.list_seq[:, 0])]
 
     def train(self, contd=False):
         self.logger.new_model(self.conf, self.model_id)
@@ -68,13 +74,17 @@ class Trainer:
             if(i_fold >= self.max_fold):
                 continue
             self.logger.new_fold()
-            if(not contd):
+
+            if(contd):
+                if(not self.model.initialized):
+                    raise ValueError("using contd=True with a non initialized model")
+            else:
                 self.model.initialize()
 
-            list_train_seq = [self.list_seq[i] for i in train_set]
-            list_test_seq = [self.list_seq[i] for i in test_set]
-            di_train = DatasetIterator(self.dataset, list_train_seq)
-            di_test = DatasetIterator(self.dataset, list_test_seq)
+            list_train_seq = self.list_seq[train_set, 0]
+            list_test_seq = self.list_seq[test_set, 0]
+            di_train = Dataset_seq2seq_iterator(self.dataset, seq_list=list_train_seq, batch_size=self.batch_size)
+            di_test = Dataset_seq2seq_iterator(self.dataset, seq_list=list_test_seq, batch_size=self.batch_size)
             di_train.new_sequence_callbacks.append(self.model.new_sequence)  # callback to reset the rnn state
 
             log_epoch = 0

@@ -1,16 +1,14 @@
 import numpy as np
-import random
 import collections
 import math
 from .utils import frame_ndarray
 
 
-def format_sequence(in_seq, target_seq, batch_size, num_steps, overlap=.5):
+def format_sequence(in_seq, target_seq, batch_size, num_steps, overlap=.5):  
     """
-    Split a sequence into a list of batches.
-    Each batch is a list of two ndarray [x, y]
-    Each ndarray has dim=[batch_size, num_steps, input_size]
+    DO NOT USE. DEPRECATED!
     """
+
     assert(len(in_seq) == len(target_seq))
     assert(len(in_seq) > num_steps)
     data_len = len(in_seq)
@@ -41,51 +39,62 @@ def format_sequence(in_seq, target_seq, batch_size, num_steps, overlap=.5):
     return out
 
 
+def LM_input_and_targets_from_inputs(x):
+    """
+    generate input and target sequences as shifted inputs.
+    In order to avoid wasting memory, the outputs are sliced references to the input x. 
+    This means that they will change if you change x.
+
+    Parameters
+    ----------
+    x : list of ndarray
+        each element has dimension [T, ...] where T is the length of the sequence
+    """
+
+    x_out = []
+    y_out = []
+    for i in range(len(x)):
+        x_out.append(x[i][0:-1])
+        y_out.append(x[i][1:])
+    return x_out, y_out
+
+
 class Dataset_seq2seq():
-    def __init__(self, in_data, batch_size, num_steps, target_data=None, name='', seq_processor=None):
+    def __init__(self, x, y=None, name=''):
         """
+        Dataset class for variable length sequence to sequence model
+
+        If you have only a list of sequences, use LM_targets_from_inputs 
+        to generate inpupts and targets using LM_input_and_targets_from_inputs
+
         Parameters
         ----------
-        data : list of numpy ndarray
-            if string is a npz file containing a list of ndarray [seq_length x frame_size]
-        dataset_transformation : callable
-            applied to every original or augmented sequence
-        transformation_mode : 'pre' | 'post'
-            select if the transformation is applied before or after the augmentations
-        dataset_augmentations : list of callable
-            create a new sequence from a given one
+        x: list of ndarray
+            each element has dimension [T, ...] where T is the length of the sequence
+        y: list of ndarray
+            as x
         """
-        self.data = in_data
-        self.target_data = target_data
+        if(y is None):
+            x, y = LM_input_and_targets_from_inputs(x)
+
+        # check number of sequences
+        if(len(x) != len(y)):
+            raise ValueError("input and targets should have same number of sequences")
+        self.nseq = len(x)
+
+        # check sequence lengths
+        self.slen = np.zeros(self.nseq, dtype=np.int)
+        for i in range(self.nseq):
+            if(len(x[i]) != len(y[i])):
+                raise ValueError("%d-th input and target sequences have different length " % (i))
+            self.slen[i] = len(x[i])
+
+        self.x = x
+        self.y = y
         self.name = name
-        self.seq_processor = seq_processor
-
-        if(self.data[0].ndim == 1):
-            self.input_size = 1
-            for i, d in enumerate(self.data):
-                self.data[i] = self.data[i].reshape(-1, 1)
-        else:
-            self.input_size = self.data[0].shape[1]
-
-        self.batch_size = batch_size
-        self.num_steps = num_steps
-
-        self.nseq = len(self.data)
-        self.slen = [len(s) for s in self.data]
-
-        # parse target_data if present
-        if(self.target_data is not None):
-            assert(len(self.target_data) == len(self.data))
-            for i in range(self.nseq):
-                # assume same length
-                assert(self.target_data[i].size == self.data[i].size)
-                if(self.target_data[i].ndim == 1):
-                    self.target_data[i] = self.target_data[i].reshape(-1, 1)
 
         self.conf = {
             "name": self.name,
-            "batch_size": int(self.batch_size),
-            "num_steps": int(self.num_steps),
             "nseq": self.nseq,
             "slen": self.slen,
             "tot_len": sum(self.slen),
@@ -93,97 +102,98 @@ class Dataset_seq2seq():
             "min_len": min(self.slen),
         }
 
-    def format(self, iseq):
-        seq = self.data[iseq]
 
-        # data is a tuple input_seq, target_seq
-        data = (seq[:-1], seq[1:])
-        if(self.target_data is not None):
-            data = (seq, self.target_data[iseq])
-
-        # seqs is the list containing data + all augmented sequences
-        seqs = [data]
-        if(self.seq_processor is not None):
-            seqs.extend(self.seq_processor(data))
-
-        out = []
-        for s in seqs:
-            out.append(format_sequence(s[0], s[1], self.batch_size, self.num_steps))
-
-        return out
-
-
-class DatasetIterator:
-    """
-    Stores a reference to the dataset and produces batches of data.
-    """
-
-    def __init__(self, dataset, seq_list):
+class Dataset_seq2seq_iterator():
+    def __init__(self, dataset, seq_list, batch_size=None, num_buckets=1):
         """
-        Stores a reference to the dataset and produces batches of data.
+        Iterate over seq_list, trying to group sequences of similar lengths
 
         Parameters
         ----------
-        dataset : Dataset
-            an instance of Dataset class
-        seq_list : list
-            the list of sequences in the dataset to read (different for train_set and test_set)
+        num_buckets: int
+            group sequences by length in num_buckets groups
+            used for reducing the variability of sequence lengths in the same batch
         """
+        if(num_buckets > len(seq_list)):
+            raise ValueError("num_buckets should be smaller than number of sequences")
+
+        if(batch_size is not None):
+            if(batch_size > len(seq_list) // num_buckets):
+                raise ValueError("batch_size should be smaller than number of sequences per bucket")
+
         self.dataset = dataset
-        self.seq_list = seq_list
+        self.seq_list = np.array(seq_list, dtype=np.int)
+        self.batch_size = int(batch_size)
+        self.num_buckets = int(num_buckets)
+        self.create_buckets()
+
         self.new_sequence_callbacks = []  # event: list of callables
-        self.reset()
-
-    def reset(self):
         self.epochs = 0
-        self.iseq = 0
-        self.buffer = collections.deque()
-        self.ibuf = 0
-        self.fire_new_seq = True
-        self._fill_buffer()
 
-    def _new_seq_to_buffer(self):
-        iseq = self.seq_list[self.iseq]
-        new_buffer = self.dataset.format(iseq)  # a list of [[x_0, y_0], [x_1, y_1]] for each sequence
-        self.buffer.extend(new_buffer)
-        self.buffer_len = len(self.buffer)
-
-        # self.epochs += 1 / len(self.seq_list)
-        self.iseq = (self.iseq + 1) % len(self.seq_list)
-
-    def _fill_buffer(self):
-        while(len(self.buffer) == 0):
-            self._new_seq_to_buffer()
-
-    def produce(self):
+    def create_buckets(self):
         """
-        Produce the next batch of (inputs, target)
-
-        Return
-        ------
-        inputs : numpy ndarray [batch_size x num_steps x input_size]
-        targets : numpy ndarray [1 x num_steps x target_size]
+        Create self.buckets a list of 1-dim int arrays containing 
+        the indices of sequences (sorted by length)
         """
-        if(self.fire_new_seq):
-            [fn() for fn in self.new_sequence_callbacks]
-            self.fire_new_seq = False
+        d = self.dataset
 
-        assert(len(self.buffer) > 0)
-        assert(len(self.buffer[0]) > self.ibuf)
-        assert(len(self.buffer[0][self.ibuf]) == 2)
+        iseq = np.argsort(d.slen[self.seq_list])
+        split_points = np.linspace(0, d.nseq, self.num_buckets + 1, endpoint=True, dtype=np.int)
+        self.buckets = np.split(iseq, split_points[1:-1])  # indices of seq_list
+        self.buckets_counter = np.zeros(self.num_buckets, dtype=np.int)
+        self.buckets_size = np.array(np.diff(split_points), dtype=np.int)
 
-        # print(self.ibuf, '/', len(self.buffer[0]))
-        out = self.buffer[0][self.ibuf]
-        assert(len(out) == 2)  # x, y
-        self.ibuf += 1
-        self.epochs += 1 / (len(self.seq_list) * self.buffer_len * len(self.buffer[0]))
+    def shuffle(self):
+        # shuffle within each bucket
+        for i in range(self.num_buckets):
+            np.random.shuffle(self.buckets[i])
+            self.buckets_counter[i] = 0
 
-        if(len(self.buffer[0]) == self.ibuf):
-            self.buffer.popleft()
-            self.ibuf = 0
-            self.fire_new_seq = True
+    def next_batch(self, batch_size=None):
+        if(batch_size is None):
+            batch_size = self.batch_size
 
-        if(len(self.buffer) == 0):
-            self._fill_buffer()
+        if(np.any(self.buckets_size < batch_size)):
+            raise ValueError("batch_size should be smaller than bucket_size")
 
-        return out
+        # find available buckets:
+        available_buckets = np.where(self.buckets_counter + batch_size <= self.buckets_size)[0]
+        if(len(available_buckets) == 0):
+            self.epochs += 1
+            self.shuffle()
+            available_buckets = np.arange(self.num_buckets, dtype=np.int)  # all are available
+
+        i = np.random.choice(available_buckets)  # choose from available buckets
+
+        # extract sequences from the i-th bucket
+        d = self.dataset
+        c = self.buckets_counter[i]
+        ib = self.buckets[i][c:c + batch_size]
+        ii = self.seq_list[ib]
+        x_list = [d.x[ii_] for ii_ in ii]
+        y_list = [d.y[ii_] for ii_ in ii]
+
+        self.buckets_counter[i] += batch_size
+
+        # pad sequences to the max length
+        lengths = np.array([len(x_) for x_ in x_list], dtype=np.int)
+        max_len = np.max(lengths)
+
+        # allocate input and target batch
+        x_dtype = d.x[0].dtype
+        x_shape = d.x[0][0].shape
+        x = np.zeros((batch_size, max_len,) + x_shape, dtype=x_dtype)
+
+        y_dtype = d.y[0].dtype
+        y_shape = d.y[0][0].shape
+        y = np.zeros((batch_size, max_len,) + y_shape, dtype=y_dtype)
+
+        # copy the sequences
+        for i in range(batch_size):
+            x[i, :lengths[i], ...] = x_list[i]
+            y[i, :lengths[i], ...] = y_list[i]
+
+        # every batch starts a new sequence (TODO: modify for fixed-length truncated BPTT)
+        [fn() for fn in self.new_sequence_callbacks]
+
+        return x, y, lengths
