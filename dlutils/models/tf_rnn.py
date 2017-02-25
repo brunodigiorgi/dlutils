@@ -44,16 +44,15 @@ def sample(probs, temperature=1.0, avoid=[]):
         with 1 sample from the default softmax. With 0 choose the mode (max of out)
     avoid: list of symbols to avoid when sampling
     """
-    
+
     # may produce underflow errors, call np.seterr(under='ignore') somewhere before this
     # for stability, avoid log(0)
     if(np.any(probs == 0)):
         k = np.min(probs[probs != 0]) * 0.01
         probs[probs == 0] = k
 
-    logits = np.log(probs) 
+    logits = np.log(probs)
     return logits_sample(logits, temperature=temperature, avoid=avoid)
-    
 
 
 class RNNLM_TF_FeedbackStage_Sampler:
@@ -139,7 +138,7 @@ class RNNLM_TF_OutputStage_Classification:
         seqlen_mask = tf.sequence_mask(seqlen)
         seqlen_mask_flat = tf.reshape(seqlen_mask, [-1])  # flatten
         loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=targets_flat)
-        
+
         # boolean mask produces a UserWarning regarding the gradient
         # "Converting sparse IndexedSlices to a dense Tensor of unknown shape."
         # loss = tf.boolean_mask(loss, seqlen_mask_flat)
@@ -172,10 +171,10 @@ class RNNLM_TF_OutputStage_Regression:
         seqlen_mask = tf.sequence_mask(seqlen)
         seqlen_mask_flat = tf.reshape(seqlen_mask, [-1])  # flatten
 
-        outputs_reshaped = tf.reshape(outputs, [-1])  # flatten
+        outputs_flat = tf.reshape(outputs, [-1])  # flatten
 
         # mean square error
-        loss = tf.square(outputs_reshaped - targets_reshaped)
+        loss = tf.square(outputs_flat - targets_flat)
         loss = tf.boolean_mask(loss, seqlen_mask_flat)
         loss = tf.reduce_mean(loss)
 
@@ -328,13 +327,12 @@ class RNNLM_TF():
         Parameters
         ----------
         priming_seq: ndarray
-            numpy array [T, I] where T is the number of priming time steps, 
+            numpy array [T, I] where T is the number of priming time steps,
             and I is the input dimension
         length: int
             length of the generated sequence
         """
         self._set_keep_prob(1.)  # disable dropout: generation is deterministic
-        # state = self.session.run(self.stacked_cell.zero_state(1, tf.float32))        
 
         if(priming_seq.shape[-1] != self.input_stage.conf["input_size"]):
             raise ValueError("incorrect shape of priming sequence")
@@ -342,7 +340,7 @@ class RNNLM_TF():
         seqlen = np.array([priming_seq.shape[0]], dtype=np.int)
         inputs = np.expand_dims(priming_seq[:-1], axis=0)  # batch size = 1
         state = self.session.run(self.initial_state, {self.inputs: inputs})
-        
+
         feed = {self.inputs: inputs, self.initial_state: state, self.seqlen: seqlen}
         state = self.session.run(self.final_state, feed)
 

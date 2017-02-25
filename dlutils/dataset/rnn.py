@@ -1,10 +1,9 @@
 import numpy as np
-import collections
 import math
 from .utils import frame_ndarray
 
 
-def format_sequence(in_seq, target_seq, batch_size, num_steps, overlap=.5):  
+def format_sequence(in_seq, target_seq, batch_size, num_steps, overlap=.5):
     """
     DO NOT USE. DEPRECATED!
     """
@@ -42,7 +41,7 @@ def format_sequence(in_seq, target_seq, batch_size, num_steps, overlap=.5):
 def LM_input_and_targets_from_inputs(x):
     """
     generate input and target sequences as shifted inputs.
-    In order to avoid wasting memory, the outputs are sliced references to the input x. 
+    In order to avoid wasting memory, the outputs are sliced references to the input x.
     This means that they will change if you change x.
 
     Parameters
@@ -64,7 +63,7 @@ class Dataset_seq2seq():
         """
         Dataset class for variable length sequence to sequence model
 
-        If you have only a list of sequences, use LM_targets_from_inputs 
+        If you have only a list of sequences, use LM_targets_from_inputs
         to generate inpupts and targets using LM_input_and_targets_from_inputs
 
         Parameters
@@ -132,7 +131,7 @@ class Dataset_seq2seq_iterator():
 
     def create_buckets(self):
         """
-        Create self.buckets a list of 1-dim int arrays containing 
+        Create self.buckets a list of 1-dim int arrays containing
         the indices of sequences (sorted by length)
         """
         d = self.dataset
