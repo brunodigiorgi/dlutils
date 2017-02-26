@@ -12,8 +12,8 @@ class Logger:
     Interface for the Logger class
     """
 
-    def __init__(self, log_every_step=20):
-        self.log_every_step = log_every_step
+    def __init__(self, log_every_ksteps=20):
+        self.log_every_ksteps = log_every_ksteps
 
     def new_model(self, conf, model_id=None):
         print('*** new model ***')
@@ -30,14 +30,14 @@ class Logger:
     def train_step(self, loss, epochs):
         self.train_loss[0] += loss
         self.train_loss[1] += 1
-        if(self.train_loss[1] % self.log_every_step == 0):
+        if(self.train_loss[1] % self.log_every_ksteps == 0):
             print('epoch: %.2f, train loss: %.3f' % (epochs, self.train_loss[0] / self.train_loss[1]))
             self.train_loss = [0, 0]
 
     def test_step(self, loss, epochs):
         self.test_loss[0] += loss
         self.test_loss[1] += 1
-        if(self.test_loss[1] % self.log_every_step == 0):
+        if(self.test_loss[1] % self.log_every_ksteps == 0):
             print('epoch: %.2f, test loss: %.3f' % (epochs, self.test_loss[0] / self.test_loss[1]))
             self.test_loss = [0, 0]
 
@@ -82,13 +82,13 @@ class LoggerComposite(Logger):
 
 
 class HtmlLogger(Logger):
-    def __init__(self, ylabel="loss", log_every_step=50, log_delta_sec=30):
+    def __init__(self, ylabel="loss", log_every_ksteps=50, log_delta_sec=30):
         self.template = resource_string('dlutils.resources', 'LogTemplate.html_template').decode('utf-8')
         self.ylabel = ylabel
 
         self.log_delta_sec = log_delta_sec
         self.log_time = time.time() - self.log_delta_sec
-        self.log_every_step = log_every_step
+        self.log_every_ksteps = log_every_ksteps
 
     def new_model(self, conf, model_dir, model_id=None):
         self.conf = conf
@@ -183,7 +183,7 @@ class HtmlLogger(Logger):
         def invnest(x):
             return [[x_[0] for x_ in x], [x_[1] for x_ in x]]
 
-        def aggregate_steps(x, steps=self.log_every_step):
+        def aggregate_steps(x, steps=self.log_every_ksteps):
             x_ = x[0]
             y_ = x[1]
             assert(len(x_) == len(y_))

@@ -7,8 +7,13 @@ References for variable length rnn:
 
 import tensorflow as tf
 import numpy as np
+import importlib
 from . import tf_constants
 from . import tf_base
+
+# reload modules from this package (to see changes while in interactive development sessions)
+tf_constants = importlib.reload(tf_constants)
+tf_base = importlib.reload(tf_base)
 
 
 def logits_sample(logits, temperature=1.0, avoid=[]):
@@ -190,7 +195,7 @@ class RNNLM_TF_OutputStage_Regression:
 
 class RNNLM_TF():
     def __init__(self, input_stage, output_stage, feedback_stage, rnn_layers, dense_layers,
-                 init_scale=.1, optimizer="Adagrad", learning_rate=.1, keep_prob=1., grad_clip=5.):
+                 init_scale=.1, optimizer="Adagrad", learning_rate=.1, keep_prob=1., grad_clip=5., max_to_keep=5):
         """
         Creates a RNN architecture for language modeling with Tensorflow
 
@@ -216,6 +221,7 @@ class RNNLM_TF():
         self.input_stage = input_stage
         self.output_stage = output_stage
         self.feedback_stage = feedback_stage
+        self.max_to_keep = max_to_keep
 
         self.conf = {
             "input_stage": input_stage.conf,
@@ -265,7 +271,7 @@ class RNNLM_TF():
         self.need_reset_rnn_state = True  # initialize first rnn state
 
         # saver
-        self.saver = tf.train.Saver(max_to_keep=5)  # keep only 5 most recent checkpoints
+        self.saver = tf.train.Saver(max_to_keep=self.max_to_keep)  # keep only 5 most recent checkpoints
 
     def _check_conf(self):
         if(len(self.conf['dense_layers']) > 0):

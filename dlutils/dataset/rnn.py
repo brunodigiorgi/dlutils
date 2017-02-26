@@ -5,7 +5,7 @@ from .utils import frame_ndarray
 
 def format_sequence(in_seq, target_seq, batch_size, num_steps, overlap=.5):
     """
-    DO NOT USE. DEPRECATED!
+    DO NOT USE. DEPRECATED
     """
 
     assert(len(in_seq) == len(target_seq))
@@ -52,12 +52,14 @@ def LM_input_and_targets_from_inputs(x):
 
     x_out = []
     y_out = []
+    ignored_sequences = 0
     for i in range(len(x)):
         if(len(x[i]) < 2):
-            print("Warning: sequence with length < 2 found.")
+            ignored_sequences += 1
             continue
         x_out.append(x[i][0:-1])
         y_out.append(x[i][1:])
+    print("Warning: %d sequences ignored because length < 2" % (ignored_sequences,))
     return x_out, y_out
 
 
@@ -98,7 +100,6 @@ class Dataset_seq2seq():
         self.conf = {
             "name": self.name,
             "nseq": self.nseq,
-            "slen": self.slen.tolist(),
             "tot_len": sum(self.slen.tolist()),
             "max_len": max(self.slen.tolist()),
             "min_len": min(self.slen.tolist()),
@@ -138,9 +139,8 @@ class Dataset_seq2seq_iterator():
         the indices of sequences (sorted by length)
         """
         d = self.dataset
-
         iseq = np.argsort(d.slen[self.seq_list])
-        split_points = np.linspace(0, d.nseq, self.num_buckets + 1, endpoint=True, dtype=np.int)
+        split_points = np.linspace(0, len(self.seq_list), self.num_buckets + 1, endpoint=True, dtype=np.int)
         self.buckets = np.split(iseq, split_points[1:-1])  # indices of seq_list
         self.buckets_counter = np.zeros(self.num_buckets, dtype=np.int)
         self.buckets_size = np.array([len(b_) for b_ in self.buckets], dtype=np.int)

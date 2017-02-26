@@ -1,15 +1,20 @@
 from sklearn.model_selection import KFold
 import numpy as np
-import time
-from ..dataset.rnn import Dataset_seq2seq_iterator
-from .logger import Logger
-from .early_stopping import EarlyStoppingBase
 from time import localtime, strftime
 import os
 import math
+import importlib
+from ..dataset import rnn as _dataset_rnn
+from . import logger as _logger
+from . import early_stopping as _early_stopping
+
+# reload modules from this package (to see changes while in interactive development sessions)
+_dataset_rnn = importlib.reload(_dataset_rnn)
+_logger = importlib.reload(_logger)
+_early_stopping = importlib.reload(_early_stopping)
 
 
-def epoch_loop(dataset_iterator, model_fn, log_fn):
+def epoch_loop(dataset_iterator, model_fn, log_fn=None):
     loss, count = 0, 0
     iepoch = math.floor(dataset_iterator.epochs)
     while(dataset_iterator.epochs < iepoch + 1):
@@ -17,7 +22,8 @@ def epoch_loop(dataset_iterator, model_fn, log_fn):
         loss_ = model_fn(inputs_, targets_, seqlen_)
         loss += loss_
         count += 1
-        log_fn(loss_, dataset_iterator.epochs)
+        if(log_fn is not None):
+            log_fn(loss_, dataset_iterator.epochs)
     return loss / count
 
 
@@ -32,7 +38,7 @@ class Trainer:
 
         self.logger = logger
         if(self.logger is None):
-            self.logger = Logger()
+            self.logger = _logger.Logger()
 
         self.nfolds = nfolds
         assert(self.nfolds > 0)
@@ -44,7 +50,7 @@ class Trainer:
 
         self.early_stopping = early_stopping
         if(self.early_stopping is None):
-            self.early_stopping = EarlyStoppingBase()  # dummy early stopping
+            self.early_stopping = _early_stopping.EarlyStoppingBase()  # dummy early stopping
 
         self.save_every = save_every
         self.proportion = proportion
@@ -80,6 +86,7 @@ class Trainer:
 
         # k-fold cross-validation
         for i_fold, (train_set, test_set) in enumerate(self.k_fold):
+            print("  fold:", i_fold)
             if(i_fold >= self.max_fold):
                 continue
             self.logger.new_fold()
@@ -92,8 +99,8 @@ class Trainer:
 
             list_train_seq = self.list_seq[train_set, 0]
             list_test_seq = self.list_seq[test_set, 0]
-            di_train = Dataset_seq2seq_iterator(self.dataset, seq_list=list_train_seq, batch_size=self.batch_size, num_buckets=self.num_buckets)
-            di_test = Dataset_seq2seq_iterator(self.dataset, seq_list=list_test_seq, batch_size=self.batch_size, num_buckets=self.num_buckets)
+            di_train = _dataset_rnn.Dataset_seq2seq_iterator(self.dataset, seq_list=list_train_seq, batch_size=self.batch_size, num_buckets=self.num_buckets)
+            di_test = _dataset_rnn.Dataset_seq2seq_iterator(self.dataset, seq_list=list_test_seq, batch_size=self.batch_size, num_buckets=self.num_buckets)
 
             # callback to reset the rnn state
             di_train.new_sequence_callbacks.append(self.model.new_sequence)
@@ -111,13 +118,13 @@ class Trainer:
                 self.logger.new_epoch(iepoch)
 
                 # train epoch
-                train_loss = epoch_loop(di_train, self.model.train, self.logger.train_step)
+                train_loss = epoch_loop(di_train, self.model.train)
                 log_epoch = math.floor(di_train.epochs)
                 self.logger.train_epoch(train_loss, log_epoch)
 
                 # test epoch
                 if(self.nfolds > 1):
-                    test_loss = epoch_loop(di_test, self.model.test, self.logger.test_step)
+                    test_loss = epoch_loop(di_test, self.model.test)
                     self.logger.test_epoch(test_loss, log_epoch)
                 else:
                     test_loss = train_loss
