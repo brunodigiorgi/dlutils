@@ -264,14 +264,6 @@ class RNNLM_TF():
         self._train = optimizer.apply_gradients(zip(grads, tvars))
         self.need_reset_rnn_state = True  # initialize first rnn state
 
-        # TODO: no longer need to create another graph for generative, since num_steps is now dynamic
-        # generative graph, needed to use inputs with num_steps = 1
-        # self.g_inputs, g_outputs = self.input_stage.input_fn(1)
-        # ret = tf_base.rnn_stack(g_outputs, self.conf['rnn_layers'], self.keep_prob, scope='rnnlm', reuse=True)
-        # _, g_outputs, self.g_initial_state, self.g_final_state = ret
-        # _, g_outputs = tf_base.dense_stack(g_outputs, self.conf['dense_layers'], self.conf['init_scale'], scope='rnnlm', reuse=True)
-        # self.g_outputs = self.output_stage.output_fn(g_outputs)
-
         # saver
         self.saver = tf.train.Saver(max_to_keep=5)  # keep only 5 most recent checkpoints
 
@@ -321,11 +313,12 @@ class RNNLM_TF():
         # set the keep_probability parameter of Dropout
         self.session.run(tf.assign(self.keep_prob, keep_prob))
 
-    def save(self, fn):
-        self.saver.save(self.session, fn)
+    def save(self, save_path, global_step=None):
+        return self.saver.save(self.session, save_path=save_path, global_step=global_step)
 
-    def load(self, fn):
-        self.saver.restore(self.session, fn)
+    def load(self, save_path):
+        # save_path is tipically a value returned from a save()
+        self.saver.restore(self.session, save_path=save_path)
 
     def generate(self, priming_seq, length):
         """

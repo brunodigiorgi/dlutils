@@ -3,6 +3,7 @@ import numpy as np
 import time
 from ..dataset.rnn import Dataset_seq2seq_iterator
 from .logger import Logger
+from .early_stopping import EarlyStoppingBase
 from time import localtime, strftime
 import os
 import math
@@ -11,7 +12,7 @@ import math
 def epoch_loop(dataset_iterator, model_fn, log_fn):
     loss, count = 0, 0
     iepoch = math.floor(dataset_iterator.epochs)
-    while(dataset_iterator.epochs <= iepoch + 1):
+    while(dataset_iterator.epochs < iepoch + 1):
         inputs_, targets_, seqlen_ = dataset_iterator.next_batch()
         loss_ = model_fn(inputs_, targets_, seqlen_)
         loss += loss_
@@ -21,12 +22,13 @@ def epoch_loop(dataset_iterator, model_fn, log_fn):
 
 
 class Trainer:
-    def __init__(self, dataset, model, batch_size, logger=None,
+    def __init__(self, dataset, model, batch_size, num_buckets=1, logger=None,
                  nfolds=5, max_fold=None, proportion=1,
-                 max_epochs=1000, save_every=100, model_path='models/'):
+                 max_epochs=1000, early_stopping=None, save_every=100, model_path='models/'):
         self.dataset = dataset
         self.model = model
         self.batch_size = int(batch_size)
+        self.num_buckets = int(num_buckets)
 
         self.logger = logger
         if(self.logger is None):
@@ -40,6 +42,11 @@ class Trainer:
 
         assert((self.max_fold > 0) and (self.max_fold <= self.nfolds))
 
+        self.early_stopping = early_stopping
+        if(self.early_stopping is None):
+            self.early_stopping = EarlyStoppingBase()  # dummy early stopping
+
+        self.save_every = save_every
         self.proportion = proportion
         self.max_epochs = max_epochs
         self.model_path = model_path
@@ -47,18 +54,19 @@ class Trainer:
             os.mkdir(self.model_path)
 
         self.conf = {
-            "save_every": save_every,
+            "save_every": self.save_every,
             "max_epochs": self.max_epochs,
             "proportion": self.proportion,
             "nfolds": self.nfolds,
             "batch_size": self.batch_size,
-            "model": {},
-            "dataset": {}
         }
-        self.conf["model"].update(self.model.conf)
-        self.conf["dataset"].update(self.dataset.conf)
+        self.conf["model"] = self.model.conf
+        self.conf["dataset"] = self.dataset.conf
 
         self.model_id = strftime("%Y%m%d%H%M%S", localtime())
+        self.model_dir = os.path.join(self.model_path, self.model_id)
+        if(not os.path.exists(self.model_dir)):
+            os.mkdir(self.model_dir)
 
         self.list_seq = np.arange(int(dataset.nseq * self.proportion), dtype=np.int).reshape(-1, 1)
         if(self.nfolds > 1):
@@ -68,8 +76,9 @@ class Trainer:
             self.k_fold = [(self.list_seq[:, 0], self.list_seq[:, 0])]
 
     def train(self, contd=False):
-        self.logger.new_model(self.conf, self.model_id)
+        self.logger.new_model(self.conf, self.model_dir, self.model_id)
 
+        # k-fold cross-validation
         for i_fold, (train_set, test_set) in enumerate(self.k_fold):
             if(i_fold >= self.max_fold):
                 continue
@@ -83,9 +92,18 @@ class Trainer:
 
             list_train_seq = self.list_seq[train_set, 0]
             list_test_seq = self.list_seq[test_set, 0]
-            di_train = Dataset_seq2seq_iterator(self.dataset, seq_list=list_train_seq, batch_size=self.batch_size)
-            di_test = Dataset_seq2seq_iterator(self.dataset, seq_list=list_test_seq, batch_size=self.batch_size)
-            di_train.new_sequence_callbacks.append(self.model.new_sequence)  # callback to reset the rnn state
+            di_train = Dataset_seq2seq_iterator(self.dataset, seq_list=list_train_seq, batch_size=self.batch_size, num_buckets=self.num_buckets)
+            di_test = Dataset_seq2seq_iterator(self.dataset, seq_list=list_test_seq, batch_size=self.batch_size, num_buckets=self.num_buckets)
+
+            # callback to reset the rnn state
+            di_train.new_sequence_callbacks.append(self.model.new_sequence)
+            di_test.new_sequence_callbacks.append(self.model.new_sequence)
+
+            # early stopping
+            best_model_path = self.model_id + '_' + str(i_fold) + "_best.ckpt"
+            best_model_path = os.path.join(self.model_dir, best_model_path)
+            self.early_stopping.setup(self.model, best_model_path)
+            self.early_stopping.reset()
 
             log_epoch = 0
             save_epoch = 0
@@ -101,10 +119,17 @@ class Trainer:
                 if(self.nfolds > 1):
                     test_loss = epoch_loop(di_test, self.model.test, self.logger.test_step)
                     self.logger.test_epoch(test_loss, log_epoch)
+                else:
+                    test_loss = train_loss
 
                 # save
                 if(iepoch >= save_epoch + self.conf["save_every"]):
                     model_fn = self.model_id + '_' + str(i_fold) + "_" + str(iepoch) + ".ckpt"
-                    model_fn = os.path.join(self.model_path, model_fn)
+                    model_fn = os.path.join(self.model_dir, model_fn)
                     self.model.save(model_fn)
                     save_epoch += self.conf["save_every"]
+
+                # early stopping
+                stop = self.early_stopping.new_epoch(train_loss, test_loss)
+                if(stop):
+                    break

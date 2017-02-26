@@ -44,7 +44,7 @@ class Logger:
     def train_epoch(self, train_ev, epoch):
         print('epoch:', epoch, 'train loss:', train_ev)
 
-    def test_epoch(test_ev, epoch):
+    def test_epoch(self, test_ev, epoch):
         print('epoch:', epoch, 'test loss:', test_ev)
 
 
@@ -82,10 +82,7 @@ class LoggerComposite(Logger):
 
 
 class HtmlLogger(Logger):
-    def __init__(self, log_path, ylabel, log_every_step=50, log_delta_sec=30):
-        if(not os.path.exists(log_path)):
-            os.mkdir(log_path)
-        self.log_path = log_path
+    def __init__(self, ylabel="loss", log_every_step=50, log_delta_sec=30):
         self.template = resource_string('dlutils.resources', 'LogTemplate.html_template').decode('utf-8')
         self.ylabel = ylabel
 
@@ -93,13 +90,18 @@ class HtmlLogger(Logger):
         self.log_time = time.time() - self.log_delta_sec
         self.log_every_step = log_every_step
 
-    def new_model(self, conf, model_id=None):
+    def new_model(self, conf, model_dir, model_id=None):
         self.conf = conf
         self.model_id = model_id
         if(model_id is None):
             self.model_id = strftime("%Y%m%d%H%M%S", localtime())
-        self.json_filename = os.path.join(self.log_path, self.model_id + '.json')
-        self.html_filename = os.path.join(self.log_path, self.model_id + '.html')
+
+        self.model_dir = model_dir
+        if(not os.path.exists(self.model_dir)):
+            os.mkdir(self.model_dir)
+
+        self.json_filename = os.path.join(self.model_dir, self.model_id + '.json')
+        self.html_filename = os.path.join(self.model_dir, self.model_id + '.html')
         print('new model: ', self.json_filename, self.html_filename)
 
         self.train_loss = []

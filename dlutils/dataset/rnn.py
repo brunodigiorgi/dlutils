@@ -98,10 +98,10 @@ class Dataset_seq2seq():
         self.conf = {
             "name": self.name,
             "nseq": self.nseq,
-            "slen": self.slen,
-            "tot_len": sum(self.slen),
-            "max_len": max(self.slen),
-            "min_len": min(self.slen),
+            "slen": self.slen.tolist(),
+            "tot_len": sum(self.slen.tolist()),
+            "max_len": max(self.slen.tolist()),
+            "min_len": min(self.slen.tolist()),
         }
 
 
@@ -143,7 +143,7 @@ class Dataset_seq2seq_iterator():
         split_points = np.linspace(0, d.nseq, self.num_buckets + 1, endpoint=True, dtype=np.int)
         self.buckets = np.split(iseq, split_points[1:-1])  # indices of seq_list
         self.buckets_counter = np.zeros(self.num_buckets, dtype=np.int)
-        self.buckets_size = np.array(np.diff(split_points), dtype=np.int)
+        self.buckets_size = np.array([len(b_) for b_ in self.buckets], dtype=np.int)
 
     def shuffle(self):
         # shuffle within each bucket
