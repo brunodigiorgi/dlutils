@@ -59,7 +59,8 @@ def LM_input_and_targets_from_inputs(x):
             continue
         x_out.append(x[i][0:-1])
         y_out.append(x[i][1:])
-    print("Warning: %d sequences ignored because length < 2" % (ignored_sequences,))
+    if(ignored_sequences > 0):
+        print("Warning: %d sequences ignored because length < 2" % (ignored_sequences,))
     return x_out, y_out
 
 

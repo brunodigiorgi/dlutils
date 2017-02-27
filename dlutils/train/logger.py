@@ -15,7 +15,7 @@ class Logger:
     def __init__(self, log_every_ksteps=20):
         self.log_every_ksteps = log_every_ksteps
 
-    def new_model(self, conf, model_id=None):
+    def new_model(self, conf, model_dir, model_id=None):
         print('*** new model ***')
         print(pprint.pformat(conf, width=1, indent=0))
 

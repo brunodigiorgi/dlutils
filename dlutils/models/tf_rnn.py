@@ -273,6 +273,19 @@ class RNNLM_TF():
         # saver
         self.saver = tf.train.Saver(max_to_keep=self.max_to_keep)  # keep only 5 most recent checkpoints
 
+        # Add an Op to initialize global variables.
+        self.init_op = tf.global_variables_initializer()
+
+        # add placeholder for setting hyper parameters
+        self.ph_keep_prob = tf.placeholder(dtype=tf.float32)
+        self.op_assign_keep_prob = tf.assign(self.keep_prob, self.ph_keep_prob)
+
+        self.ph_lr = tf.placeholder(dtype=tf.float32)
+        self.op_assign_lr = tf.assign(self.lr, self.ph_lr)
+
+        # finalize the graph
+        tf.get_default_graph().finalize()
+
     def _check_conf(self):
         if(len(self.conf['dense_layers']) > 0):
             assert(self.conf['dense_layers'][-1]['num_units'] == self.output_stage.conf["input_size"])
@@ -281,7 +294,7 @@ class RNNLM_TF():
         assert((self.conf['keep_prob'] >= 0.) and (self.conf['keep_prob'] <= 1.))
 
     def set_learning_rate(self, lr):
-        self.session.run(tf.assign(self.lr, lr))
+        self.session.run(self.op_assign_lr, feed_dict={self.ph_lr: lr})
 
     def new_sequence(self):
         """
@@ -291,9 +304,7 @@ class RNNLM_TF():
         self.need_reset_rnn_state = True
 
     def initialize(self):
-        # Add an Op to initialize global variables.
-        init_op = tf.global_variables_initializer()
-        self.session.run(init_op)
+        self.session.run(self.init_op)
         self.initialized = True
 
     def train(self, inputs, targets, seqlen):
@@ -317,7 +328,7 @@ class RNNLM_TF():
 
     def _set_keep_prob(self, keep_prob):
         # set the keep_probability parameter of Dropout
-        self.session.run(tf.assign(self.keep_prob, keep_prob))
+        self.session.run(self.op_assign_keep_prob, feed_dict={self.ph_keep_prob: keep_prob})
 
     def save(self, save_path, global_step=None):
         return self.saver.save(self.session, save_path=save_path, global_step=global_step)
