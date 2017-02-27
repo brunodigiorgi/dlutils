@@ -38,7 +38,7 @@ def format_sequence(in_seq, target_seq, batch_size, num_steps, overlap=.5):
     return out
 
 
-def LM_input_and_targets_from_inputs(x):
+def LM_input_and_targets_from_inputs(x, max_len=None):
     """
     generate input and target sequences as shifted inputs.
     In order to avoid wasting memory, the outputs are sliced references to the input x.
@@ -46,21 +46,29 @@ def LM_input_and_targets_from_inputs(x):
 
     Parameters
     ----------
-    x : list of ndarray
+    x: list of ndarray
         each element has dimension [T, ...] where T is the length of the sequence
+    max_len: int
+        ignore sequences longer than max_len
     """
 
     x_out = []
     y_out = []
     ignored_sequences = 0
+    ignored_max_len = 0
     for i in range(len(x)):
         if(len(x[i]) < 2):
             ignored_sequences += 1
+            continue
+        if(len(x[i]) > max_len):
+            ignored_max_len += 1
             continue
         x_out.append(x[i][0:-1])
         y_out.append(x[i][1:])
     if(ignored_sequences > 0):
         print("Warning: %d sequences ignored because length < 2" % (ignored_sequences,))
+    if(ignored_max_len > 0):
+        print("Warning: %d sequences ignored because length > %d" % (ignored_max_len, max_len))
     return x_out, y_out
 
 
