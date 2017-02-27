@@ -111,6 +111,7 @@ class ESCondition_0(ESCondition):
     def __init__(self, alpha=0.01):
         """
         Stop as soon as GL > alpha
+        This is good to check for overfitting behavior
 
         Parameters
         ----------
@@ -153,3 +154,28 @@ class ESCondition_1(ESCondition):
         gl = self.gl(valid_error)
         tp = self.tp(train_error)
         return (gl / tp) > self.alpha
+
+
+class ESCondition_2(ESCondition):
+    def __init__(self, alpha=0.05, lookahead=5):
+        """
+        Stop as soon as std(valid_error) / mean(valid_error) < alpha
+        Check for constant regions (convergence)
+
+        Parameters
+        ----------
+        alpha: float
+            small tolerance
+        lookahead: int
+            moving window length
+        """
+        self.alpha = alpha
+        self.lookahead = lookahead
+        self.reset()
+
+    def reset(self):
+        self.valid_error = collections.deque([np.inf] * self.lookahead, maxlen=self.lookahead)
+
+    def __call__(self, train_error, valid_error):
+        self.valid_error.append(valid_error)
+        return (np.std(self.valid_error) / np.mean(self.valid_error)) < self.alpha
