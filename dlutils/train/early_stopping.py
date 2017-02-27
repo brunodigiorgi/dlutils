@@ -80,7 +80,7 @@ class EarlyStopping(EarlyStoppingBase):
 
         self.condition = condition
         self.lookahead = Lookahead(lookahead)
-        self.reset()        
+        self.reset()    
 
     def reset(self):
         self.lookahead.reset()
@@ -178,4 +178,17 @@ class ESCondition_2(ESCondition):
 
     def __call__(self, train_error, valid_error):
         self.valid_error.append(valid_error)
-        return (np.std(self.valid_error) / np.mean(self.valid_error)) < self.alpha
+        valid_error_range = np.max(self.valid_error) - np.min(self.valid_error)
+        return (valid_error_range / np.mean(self.valid_error)) < self.alpha
+
+
+class ESCondition_any(ESCondition):
+    def __init__(self, conditions):
+        self.conditions = conditions
+
+    def reset(self):
+        for c in self.conditions:
+            c.reset()
+
+    def __call__(self, train_error, valid_error):
+        return any([c(train_error, valid_error) for c in self.conditions])
