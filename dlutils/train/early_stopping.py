@@ -26,6 +26,41 @@ class EarlyStoppingBase:
         pass
 
 
+class EarlyStopping(EarlyStoppingBase):
+    def __init__(self, condition, lookahead=10):
+        """
+        Stop as soon as condition(train_error, valid_error) is true for lookahead epochs
+
+        Parameters
+        ----------
+        condition: callable
+            implement condition(train_error, valid_error)
+            look below for some examples: subclasses of ESCondition
+        """
+        super().__init__()
+
+        self.condition = condition
+        self.lookahead = Lookahead(lookahead)
+        self.reset()    
+
+    def reset(self):
+        self.lookahead.reset()
+        self.condition.reset()
+        self.best_valid_error = np.inf
+
+    def new_epoch(self, train_error, valid_error):
+        if(not self.setup_flag):
+            warnings.warn("EarlyStoppingValid Warning: no model or path for saving. \
+                You should call setup before start training")
+
+        if(valid_error < self.best_valid_error):
+            self.best_valid_error = valid_error
+            self.model.save(self.bost_model_path)
+
+        isnan = np.isnan(valid_error) or np.isnan(train_error)
+        return isnan or self.lookahead(self.condition(train_error, valid_error))
+
+
 class GeneralizationLoss:
     def __init__(self):
         self.reset()
@@ -63,40 +98,6 @@ class Lookahead:
     def __call__(self, flag):
         self.flags.append(flag)
         return all(self.flags)
-
-
-class EarlyStopping(EarlyStoppingBase):
-    def __init__(self, condition, lookahead=10):
-        """
-        Stop as soon as condition(train_error, valid_error) is true for lookahead epochs
-
-        Parameters
-        ----------
-        condition: callable
-            implement condition(train_error, valid_error)
-            look below for some examples: subclasses of ESCondition
-        """
-        super().__init__()
-
-        self.condition = condition
-        self.lookahead = Lookahead(lookahead)
-        self.reset()    
-
-    def reset(self):
-        self.lookahead.reset()
-        self.condition.reset()
-        self.best_valid_error = np.inf
-
-    def new_epoch(self, train_error, valid_error):
-        if(not self.setup_flag):
-            warnings.warn("EarlyStoppingValid Warning: no model or path for saving. \
-                You should call setup before start training")
-
-        if(valid_error < self.best_valid_error):
-            self.best_valid_error = valid_error
-            self.model.save(self.bost_model_path)
-
-        return self.lookahead(self.condition(train_error, valid_error))
 
 
 class ESCondition():

@@ -60,7 +60,7 @@ def LM_input_and_targets_from_inputs(x, max_len=None):
         if(len(x[i]) < 2):
             ignored_sequences += 1
             continue
-        if(len(x[i]) > max_len):
+        if((max_len is not None) and len(x[i]) > max_len):
             ignored_max_len += 1
             continue
         x_out.append(x[i][0:-1])

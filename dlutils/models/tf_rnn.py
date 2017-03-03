@@ -8,6 +8,7 @@ References for variable length rnn:
 import tensorflow as tf
 import numpy as np
 import importlib
+import os
 from . import tf_constants
 from . import tf_base
 
@@ -335,7 +336,34 @@ class RNNLM_TF():
 
     def load(self, save_path):
         # save_path is tipically a value returned from a save()
+        if(os.path.splitext(save_path)[1] != ".ckpt"):
+            print("Warning: save_path extension should be .ckpt")
         self.saver.restore(self.session, save_path=save_path)
+
+    def generate_one(self, input_, state=None):
+        """
+        generate one sample with given input and state
+        return probability of next symbol and network state
+
+        Return
+        ------
+        probs: 1-dim ndarray
+            probabilities of output symbol
+        state: tensorflow rnn state
+        """
+        self._set_keep_prob(1.)  # disable dropout: generation is deterministic
+
+        seqlen = np.array([1], dtype=np.int)
+        inputs = np.zeros((1, 1, self.input_stage.conf["input_size"]))
+        if(state is None):
+            state = self.session.run(self.initial_state, {self.inputs: inputs})
+
+        inputs[0, 0, :] = input_
+        feed = {self.inputs: inputs, self.initial_state: state, self.seqlen: seqlen}
+        [probs, final_state] = self.session.run([self.probs, self.final_state], feed)
+        probs = probs[0]  # batch_size = 1
+
+        return probs, final_state
 
     def generate(self, priming_seq, length):
         """
