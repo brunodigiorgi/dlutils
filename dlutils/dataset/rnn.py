@@ -116,7 +116,7 @@ class Dataset_seq2seq():
         }
 
 
-def seq2seq_iterator_factory(self, dataset, seq_list, num_buckets=None, seq_len=None, batch_size=None):
+def seq2seq_iterator_factory(dataset, seq_list, num_buckets=None, seq_len=None, batch_size=None):
     if((num_buckets is None) and (seq_len is None)):
         raise ValueError('either fixed_length or num_buckets must be specified')
     elif((num_buckets is not None) and (seq_len is not None)):
@@ -255,6 +255,10 @@ class Dataset_seq2seq_iterator_fixed_length():
         np.random.shuffle(self.seq_list)
 
     def fill_buffer(self):
+        if(self.iseq == len(self.seq_list)):
+            self.iseq = 0
+            self.epochs += 1
+            self.shuffle()
         d = self.dataset
         iseq = self.seq_list[self.iseq]
         x_, y_ = d.x[iseq], d.y[iseq]
@@ -262,10 +266,6 @@ class Dataset_seq2seq_iterator_fixed_length():
         y_framed = frame_ndarray(y_, self.seq_len, 1)
         self.buffer.extend([(x_f, y_f) for x_f, y_f in zip(x_framed, y_framed)])
         self.iseq += 1
-        if(self.iseq == len(self.seq_list)):
-            self.iseq = 0
-            self.epochs += 1
-            self.shuffle()
 
     def next_batch(self, batch_size=None):
         if(batch_size is None):
