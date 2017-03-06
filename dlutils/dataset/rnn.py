@@ -1,5 +1,6 @@
 import numpy as np
 import math
+from collections import deque
 from .utils import frame_ndarray
 
 
@@ -115,8 +116,20 @@ class Dataset_seq2seq():
         }
 
 
+def seq2seq_iterator_factory(self, dataset, seq_list, num_buckets=None, seq_len=None, batch_size=None):
+    if((num_buckets is None) and (seq_len is None)):
+        raise ValueError('either fixed_length or num_buckets must be specified')
+    elif((num_buckets is not None) and (seq_len is not None)):
+        raise ValueError('only one between fixed_length and num_buckets must be specified')
+    elif(num_buckets is not None):
+        return Dataset_seq2seq_iterator(dataset, seq_list, num_buckets=num_buckets, batch_size=batch_size)
+    elif(seq_len is not None):
+        return Dataset_seq2seq_iterator_fixed_length(dataset, seq_list, seq_len=seq_len, batch_size=batch_size)
+    return None
+
+
 class Dataset_seq2seq_iterator():
-    def __init__(self, dataset, seq_list, batch_size=None, num_buckets=1):
+    def __init__(self, dataset, seq_list, num_buckets=1, batch_size=None):
         """
         Iterate over seq_list, trying to group sequences of similar lengths
 
@@ -138,6 +151,12 @@ class Dataset_seq2seq_iterator():
         self.batch_size = int(batch_size)
         self.num_buckets = int(num_buckets)
         self.create_buckets()
+
+        d = self.dataset
+        self.x_dtype = d.x[0].dtype
+        self.x_shape = d.x[0][0].shape
+        self.y_dtype = d.y[0].dtype
+        self.y_shape = d.y[0][0].shape
 
         self.new_sequence_callbacks = []  # event: list of callables
         self.epochs = 0
@@ -191,13 +210,8 @@ class Dataset_seq2seq_iterator():
         max_len = np.max(lengths)
 
         # allocate input and target batch
-        x_dtype = d.x[0].dtype
-        x_shape = d.x[0][0].shape
-        x = np.zeros((batch_size, max_len,) + x_shape, dtype=x_dtype)
-
-        y_dtype = d.y[0].dtype
-        y_shape = d.y[0][0].shape
-        y = np.zeros((batch_size, max_len,) + y_shape, dtype=y_dtype)
+        x = np.zeros((batch_size, max_len,) + self.x_shape, dtype=self.x_dtype)
+        y = np.zeros((batch_size, max_len,) + self.y_shape, dtype=self.y_dtype)
 
         # copy the sequences
         for i in range(batch_size):
@@ -206,5 +220,74 @@ class Dataset_seq2seq_iterator():
 
         # every batch starts a new sequence (TODO: modify for fixed-length truncated BPTT)
         [fn() for fn in self.new_sequence_callbacks]
+
+        return x, y, lengths
+
+
+class Dataset_seq2seq_iterator_fixed_length():
+    def __init__(self, dataset, seq_list, seq_len, batch_size=None):
+        """
+        Iterate over seq_list 
+
+        Parameters
+        ----------
+        seq_length: int
+            split sequences into seq_len long sub sequences
+        """
+
+        self.dataset = dataset
+        self.seq_list = np.array(seq_list, dtype=np.int)
+        self.iseq = 0  # index of self.seq_list
+        self.seq_len = seq_len
+        self.batch_size = int(batch_size)
+
+        d = self.dataset
+        self.x_dtype = d.x[0].dtype
+        self.x_shape = d.x[0][0].shape
+        self.y_dtype = d.y[0].dtype
+        self.y_shape = d.y[0][0].shape
+        self.buffer = deque()
+
+        self.new_sequence_callbacks = []  # event: list of callables
+        self.epochs = 0
+
+    def shuffle(self):
+        np.random.shuffle(self.seq_list)
+
+    def fill_buffer(self):
+        d = self.dataset
+        iseq = self.seq_list[self.iseq]
+        x_, y_ = d.x[iseq], d.y[iseq]
+        x_framed = frame_ndarray(x_, self.seq_len, 1)
+        y_framed = frame_ndarray(y_, self.seq_len, 1)
+        self.buffer.extend([(x_f, y_f) for x_f, y_f in zip(x_framed, y_framed)])
+        self.iseq += 1
+        if(self.iseq == len(self.seq_list)):
+            self.iseq = 0
+            self.epochs += 1
+            self.shuffle()
+
+    def next_batch(self, batch_size=None):
+        if(batch_size is None):
+            batch_size = self.batch_size
+
+        # allocate input and target batch
+        x = np.zeros((batch_size, self.seq_len,) + self.x_shape, dtype=self.x_dtype)
+        y = np.zeros((batch_size, self.seq_len,) + self.y_shape, dtype=self.y_dtype)
+        lengths = np.array([self.seq_len] * batch_size, dtype=np.int)
+
+        remaining = batch_size
+        count = 0
+        while(remaining > 0):
+            if(len(self.buffer) == 0):
+                self.fill_buffer()
+
+            toread = min(len(self.buffer), remaining)
+            for i in range(toread):
+                x_, y_ = self.buffer.popleft()
+                x[count, :] = x_
+                y[count, :] = y_
+                remaining -= 1
+                count += 1
 
         return x, y, lengths

@@ -5,6 +5,7 @@ import collections
 def frame_ndarray(a, frame_size, hop_size):
     """
     Create slices of the input array along the first dimension, with given frame_size and hop_size
+    The other dimensions are preserved
 
     Parameters
     ----------
@@ -17,6 +18,8 @@ def frame_ndarray(a, frame_size, hop_size):
     ------
     out : ndarray
         out.shape = [nframes, frame_size] + a.shape[1:]
+        last entries might be neglected:
+        nframes = 1 + (a.shape[0] - frame_size) // hop_size
     """
     n = a.shape[0]
     nframes = 1 + (n - frame_size) // hop_size

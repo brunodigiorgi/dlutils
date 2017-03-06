@@ -28,13 +28,15 @@ def epoch_loop(dataset_iterator, model_fn, log_fn=None):
 
 
 class Trainer:
-    def __init__(self, dataset, model, batch_size, num_buckets=1, logger=None,
+    def __init__(self, dataset, model, batch_size,
+                 num_buckets=1, fixed_length=None, logger=None,
                  nfolds=5, max_fold=None, proportion=1,
                  max_epochs=1000, early_stopping=None, save_every=100, model_path='models/'):
         self.dataset = dataset
         self.model = model
         self.batch_size = int(batch_size)
-        self.num_buckets = int(num_buckets)
+        self.num_buckets = num_buckets
+        self.fixed_length = fixed_length
 
         self.logger = logger
         if(self.logger is None):
@@ -99,8 +101,14 @@ class Trainer:
 
             list_train_seq = self.list_seq[train_set, 0]
             list_test_seq = self.list_seq[test_set, 0]
-            di_train = _dataset_rnn.Dataset_seq2seq_iterator(self.dataset, seq_list=list_train_seq, batch_size=self.batch_size, num_buckets=self.num_buckets)
-            di_test = _dataset_rnn.Dataset_seq2seq_iterator(self.dataset, seq_list=list_test_seq, batch_size=self.batch_size, num_buckets=self.num_buckets)
+
+            # create iterators
+            di_train = _dataset_rnn.seq2seq_iterator_factory(self.dataset, seq_list=list_train_seq,
+                                                             num_buckets=self.num_buckets, seq_len=self.fixed_length,
+                                                             batch_size=self.batch_size)
+            di_test = _dataset_rnn.seq2seq_iterator_factory(self.dataset, seq_list=list_test_seq,
+                                                            num_buckets=self.num_buckets, seq_len=self.fixed_length,
+                                                            batch_size=self.batch_size)
 
             # callback to reset the rnn state
             di_train.new_sequence_callbacks.append(self.model.new_sequence)
