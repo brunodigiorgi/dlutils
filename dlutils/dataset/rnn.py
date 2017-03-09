@@ -218,7 +218,7 @@ class Dataset_seq2seq_iterator():
             x[i, :lengths[i], ...] = x_list[i]
             y[i, :lengths[i], ...] = y_list[i]
 
-        # every batch starts a new sequence (TODO: modify for fixed-length truncated BPTT)
+        # every batch starts a new sequence
         [fn() for fn in self.new_sequence_callbacks]
 
         return x, y, lengths
@@ -227,7 +227,7 @@ class Dataset_seq2seq_iterator():
 class Dataset_seq2seq_iterator_fixed_length():
     def __init__(self, dataset, seq_list, seq_len, batch_size=None):
         """
-        Iterate over seq_list 
+        Iterate over seq_list
 
         Parameters
         ----------
@@ -289,5 +289,8 @@ class Dataset_seq2seq_iterator_fixed_length():
                 y[count, :] = y_
                 remaining -= 1
                 count += 1
+
+        # every batch starts a new sequence
+        [fn() for fn in self.new_sequence_callbacks]
 
         return x, y, lengths

@@ -261,7 +261,9 @@ class RNNLM_TF():
 
         # output stage
         self.probs = self.output_stage.output_fn(self.logits)
+        tf.add_to_collection('probs_op', self.probs)
         self.targets, self.loss = self.output_stage.loss_fn(self.seqlen, self.logits)
+        tf.add_to_collection('loss_op', self.loss)
 
         # train
         self.lr = tf.Variable(self.conf["learning_rate"], trainable=False)
@@ -269,6 +271,8 @@ class RNNLM_TF():
         grads, _ = tf.clip_by_global_norm(tf.gradients(self.loss, tvars), self.conf['grad_clip'])
         optimizer = tf_constants.TF_OPTIMIZER[self.conf['optimizer']](self.lr)
         self._train = optimizer.apply_gradients(zip(grads, tvars))
+        tf.add_to_collection('train_op', self._train)
+
         self.need_reset_rnn_state = True  # initialize first rnn state
 
         # saver
@@ -276,13 +280,16 @@ class RNNLM_TF():
 
         # Add an Op to initialize global variables.
         self.init_op = tf.global_variables_initializer()
+        tf.add_to_collection('init_op', self.init_op)
 
         # add placeholder for setting hyper parameters
         self.ph_keep_prob = tf.placeholder(dtype=tf.float32)
         self.op_assign_keep_prob = tf.assign(self.keep_prob, self.ph_keep_prob)
+        tf.add_to_collection('assign_keep_prob_op', self.op_assign_keep_prob)
 
         self.ph_lr = tf.placeholder(dtype=tf.float32)
         self.op_assign_lr = tf.assign(self.lr, self.ph_lr)
+        tf.add_to_collection('assign_lr_op', self.op_assign_lr)
 
         # finalize the graph
         tf.get_default_graph().finalize()
